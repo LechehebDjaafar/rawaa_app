@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "979691703333",
+    "project_id": "rawaa-ac88a",
+    "storage_bucket": "rawaa-ac88a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:979691703333:android:5301f36c2c25d3089bc3cc",
+        "android_client_info": {
+          "package_name": "com.rawaa.rawaa_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAlngdbh6RCVvVTB11T1soL6xpsZ88_9Wk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
