@@ -1,132 +1,63 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
 
 class SellerProfileTab extends StatefulWidget {
   const SellerProfileTab({super.key});
 
   @override
-  State<SellerProfileTab> createState() => _SellerProfileTabState();
+  State<SellerProfileTab> createState() => _ProfileTabState();
 }
 
-class _SellerProfileTabState extends State<SellerProfileTab> with SingleTickerProviderStateMixin {
-  final CollectionReference _usersCollection = FirebaseFirestore.instance.collection('users');
-  final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? 'seller_id';
-  bool _isLoading = true;
+class _ProfileTabState extends State<SellerProfileTab>
+    with SingleTickerProviderStateMixin {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   bool _isEditing = false;
+  bool _isLoading = false;
   File? _imageFile;
-  
+  String? _base64Image; // لحفظ الصورة كـ Base64
+
   // متحكمات الإدخال
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _serviceTypeController = TextEditingController();
-  final TextEditingController _bioController = TextEditingController();
-  
+
   // ألوان التطبيق
-  final Color primaryColor = const Color(0xFF1976D2); // أزرق مائي
-  final Color secondaryColor = const Color(0xFF2F5233); // أخضر داكن
-  final Color accentColor = const Color(0xFF64B5F6); // أزرق فاتح
-  final Color backgroundColor = const Color(0xFFF5F7FA); // رمادي فاتح
-  
+  final Color primaryColor = const Color(0xFF1976D2);
+  final Color secondaryColor =  const Color.fromARGB(255, 78, 94, 243);
+  final Color accentColor = const Color(0xFF4ECDC4);
+  final Color backgroundColor = const Color(0xFFF5F7FA);
+
   // متغيرات للأنيميشن
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
-  
-  // بيانات المستخدم
-  Map<String, dynamic> _userData = {};
 
   @override
   void initState() {
     super.initState();
-    
-    // إعداد الأنيميشن
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    
+
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: Curves.easeIn,
       ),
     );
-    
-    // التحقق من وجود مجموعة المستخدمين وإنشائها إذا لم تكن موجودة
-    _ensureUsersCollectionExists().then((_) {
-      // جلب بيانات المستخدم
-      _fetchUserData();
-    });
-  }
 
-  // دالة للتحقق من وجود مجموعة المستخدمين وإنشائها إذا لم تكن موجودة
-  Future<void> _ensureUsersCollectionExists() async {
-    try {
-      // محاولة الحصول على وثيقة واحدة للتحقق من وجود المجموعة
-      final snapshot = await _usersCollection.limit(1).get();
-      
-      // إذا لم تكن المجموعة موجودة، سنضيف وثيقة مؤقتة ثم نحذفها
-      if (snapshot.docs.isEmpty) {
-        print('إنشاء مجموعة المستخدمين لأول مرة');
-        
-        // إضافة وثيقة مؤقتة
-        DocumentReference tempDoc = await _usersCollection.add({
-          'temp': true,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        
-        // حذف الوثيقة المؤقتة
-        await tempDoc.delete();
-      }
-    } catch (e) {
-      print('خطأ في التحقق من وجود مجموعة المستخدمين: $e');
-    }
-  }
-
-  // جلب بيانات المستخدم
-  Future<void> _fetchUserData() async {
-    try {
-      final docSnapshot = await _usersCollection.doc(_currentUserId).get();
-      
-      if (docSnapshot.exists) {
-        setState(() {
-          _userData = docSnapshot.data() as Map<String, dynamic>;
-          _nameController.text = _userData['name'] ?? '';
-          _usernameController.text = _userData['username'] ?? '';
-          _phoneController.text = _userData['phone'] ?? '';
-          _addressController.text = _userData['address'] ?? '';
-          _serviceTypeController.text = _userData['serviceType'] ?? '';
-          _bioController.text = _userData['bio'] ?? '';
-          _isLoading = false;
-        });
-        _animationController.forward();
-      } else {
-        // إنشاء وثيقة جديدة للمستخدم إذا لم تكن موجودة
-        await _usersCollection.doc(_currentUserId).set({
-          'name': 'بائع جديد',
-          'username': 'seller_${DateTime.now().millisecondsSinceEpoch}',
-          'phone': '',
-          'address': '',
-          'serviceType': '',
-          'bio': '',
-          'role': 'seller',
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        
-        // إعادة جلب البيانات
-        _fetchUserData();
-      }
-    } catch (e) {
-      print('خطأ في جلب بيانات المستخدم: $e');
-      setState(() {
-        _isLoading = false;
-      });
-    }
+    _animationController.forward();
   }
 
   @override
@@ -135,499 +66,608 @@ class _SellerProfileTabState extends State<SellerProfileTab> with SingleTickerPr
     _usernameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
-    _serviceTypeController.dispose();
-    _bioController.dispose();
     _animationController.dispose();
     super.dispose();
   }
 
-  // اختيار صورة من المعرض
+  // اختيار صورة من المعرض وتحويلها إلى Base64 - مصحح بالطريقة الصحيحة
   Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery);
-    
-    if (pickedImage != null) {
+    try {
+      // عرض خيارات اختيار الصورة
+      await _showImageSourceDialog();
+    } catch (e) {
+      _showErrorSnackBar('فشل في اختيار الصورة: $e');
+    }
+  }
+
+  // عرض نافذة اختيار مصدر الصورة
+  Future<void> _showImageSourceDialog() async {
+    return showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            'اختيار الصورة',
+            style: TextStyle(fontFamily: 'Cairo'),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.blue),
+                title: const Text('من المعرض',
+                    style: TextStyle(fontFamily: 'Cairo')),
+                onTap: () {
+                  Navigator.pop(context);
+                  _getImageFromSource(ImageSource.gallery);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.green),
+                title: const Text('من الكاميرا',
+                    style: TextStyle(fontFamily: 'Cairo')),
+                onTap: () {
+                  Navigator.pop(context);
+                  _getImageFromSource(ImageSource.camera);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // الحصول على الصورة من المصدر المحدد - مصحح بالطريقة الصحيحة
+  Future<void> _getImageFromSource(ImageSource source) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedImage = await picker.pickImage(
+        source: source,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 70,
+      );
+
+      if (pickedImage != null) {
+        // التحقق من وجود الملف
+        final File imageFile = File(pickedImage.path);
+        if (await imageFile.exists()) {
+          setState(() {
+            _imageFile = imageFile;
+          });
+
+          // تحويل الصورة إلى Base64 بالطريقة الصحيحة
+          await _convertImageToBase64();
+        } else {
+          _showErrorSnackBar('لم يتم العثور على الصورة المحددة');
+        }
+      } else {
+        _showErrorSnackBar('لم يتم اختيار أي صورة');
+      }
+    } catch (e) {
+      _showErrorSnackBar('خطأ في اختيار الصورة: $e');
+    }
+  }
+
+  // تحويل الصورة إلى Base64 - مصحح بالطريقة الصحيحة من المراجع
+  Future<void> _convertImageToBase64() async {
+    if (_imageFile == null) return;
+
+    try {
+      // التحقق من وجود الملف
+      if (!await _imageFile!.exists()) {
+        _showErrorSnackBar('الملف غير موجود');
+        return;
+      }
+
+      // قراءة الصورة كـ bytes - الطريقة الصحيحة من المراجع
+      final bytes = await _imageFile!.readAsBytes();
+
+      // التحقق من حجم الصورة (الحد الأقصى 1MB)
+      if (bytes.length > 1024 * 1024) {
+        _showErrorSnackBar(
+            'حجم الصورة كبير جداً. يرجى اختيار صورة أصغر من 1MB');
+        setState(() {
+          _imageFile = null;
+        });
+        return;
+      }
+
+      // تحويل إلى Base64 - الطريقة الصحيحة من المراجع
+      String base64String = base64Encode(bytes);
+
       setState(() {
-        _imageFile = File(pickedImage.path);
+        _base64Image = base64String;
+      });
+
+      _showSuccessSnackBar('تم تحضير الصورة بنجاح');
+      print("imgbytes : $base64String"); // للتأكد من التحويل
+    } catch (e) {
+      _showErrorSnackBar('فشل في معالجة الصورة: $e');
+      setState(() {
+        _imageFile = null;
+        _base64Image = null;
       });
     }
   }
 
-  // رفع الصورة إلى Firebase Storage
-  Future<String?> _uploadImage() async {
-    if (_imageFile == null) return _userData['profileImage'];
-    
-    try {
-      final String fileName = 'profile_${_currentUserId}_${DateTime.now().millisecondsSinceEpoch}';
-      final Reference storageRef = FirebaseStorage.instance.ref().child('profile_images/$fileName');
-      
-      final UploadTask uploadTask = storageRef.putFile(_imageFile!);
-      final TaskSnapshot snapshot = await uploadTask;
-      
-      return await snapshot.ref.getDownloadURL();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشل رفع الصورة: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return null;
-    }
-  }
+  // حفظ التغييرات مع الصورة المحولة إلى Base64
+  Future<void> _saveChanges(Map<String, dynamic> userData) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-  // حفظ التغييرات
-  Future<void> _saveChanges() async {
     setState(() {
       _isLoading = true;
     });
-    
+
     try {
-      String? profileImageUrl = _userData['profileImage'];
-      
-      // رفع الصورة الجديدة إذا تم اختيارها
-      if (_imageFile != null) {
-        profileImageUrl = await _uploadImage();
-      }
-      
-      // تحديث بيانات المستخدم
-      await _usersCollection.doc(_currentUserId).update({
-        'name': _nameController.text,
-        'username': _usernameController.text,
-        'phone': _phoneController.text,
-        'address': _addressController.text,
-        'serviceType': _serviceTypeController.text,
-        'bio': _bioController.text,
-        'profileImage': profileImageUrl,
+      // تحضير البيانات للحفظ
+      Map<String, dynamic> updateData = {
+        'name': _nameController.text.trim(),
+        'username': _usernameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'address': _addressController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
-      });
-      
-      // إعادة جلب البيانات المحدثة
-      await _fetchUserData();
-      
+      };
+
+      // إضافة الصورة المحولة إلى Base64 إذا تم اختيار صورة جديدة
+      if (_base64Image != null) {
+        updateData['profileImageBase64'] = _base64Image;
+        updateData['hasProfileImage'] = true;
+      }
+
+      // تحديث بيانات المستخدم في Firestore
+      await _firestore.collection('users').doc(user.uid).update(updateData);
+
       setState(() {
         _isEditing = false;
+        _isLoading = false;
+        _imageFile = null;
+        _base64Image = null;
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('تم تحديث البيانات بنجاح'),
-          backgroundColor: secondaryColor,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+
+      _showSuccessSnackBar('تم تحديث البيانات بنجاح');
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showErrorSnackBar('حدث خطأ: $e');
     }
   }
 
   // تسجيل الخروج
   Future<void> _logout() async {
-    try {
-      await FirebaseAuth.instance.signOut();
-      
-      // حذف بيانات الجلسة من SharedPreferences
-      // يمكنك إضافة هذا الجزء إذا كنت تستخدم SharedPreferences
-      
-      // العودة إلى صفحة تسجيل الدخول
-      if (mounted) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ أثناء تسجيل الخروج: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تأكيد تسجيل الخروج',
+            style: TextStyle(fontFamily: 'Cairo')),
+        content: const Text('هل أنت متأكد من تسجيل الخروج؟',
+            style: TextStyle(fontFamily: 'Cairo')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              try {
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setBool('is_logged_in', false);
+                await prefs.remove('user_type');
+                await _auth.signOut();
+
+                if (context.mounted) {
+                  Navigator.of(context)
+                      .pushNamedAndRemoveUntil('/login', (route) => false);
+                }
+              } catch (e) {
+                _showErrorSnackBar('حدث خطأ أثناء تسجيل الخروج: $e');
+              }
+            },
+            child: const Text('تسجيل الخروج',
+                style: TextStyle(fontFamily: 'Cairo')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // عرض رسائل النجاح
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // عرض رسائل الخطأ
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: _isLoading
-          ? Center(
-              child: CircularProgressIndicator(
-                color: primaryColor,
-              ),
-            )
-          : FadeTransition(
-              opacity: _fadeAnimation,
-              child: SingleChildScrollView(
-                child: Column(
-                  children: [
-                    // الصورة الخلفية والصورة الشخصية
-                    _buildProfileHeader(),
-                    
-                    // معلومات المستخدم
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: _isEditing
-                          ? _buildEditForm()
-                          : _buildProfileInfo(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+    final user = _auth.currentUser;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenHeight = constraints.maxHeight;
+        final screenWidth = constraints.maxWidth;
+        final isSmallScreen = screenHeight < 600;
+        final isVerySmallScreen = screenHeight < 500;
+
+        return Container(
+          color: backgroundColor,
+          child: FutureBuilder<DocumentSnapshot>(
+            future: _firestore.collection('users').doc(user?.uid).get(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return Center(
+                  child: CircularProgressIndicator(color: primaryColor),
+                );
+              }
+
+              if (!snapshot.hasData || !snapshot.data!.exists) {
+                return const Center(
+                  child: Text(
+                    'لا توجد بيانات للمستخدم',
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 16),
+                  ),
+                );
+              }
+
+              final userData = snapshot.data!.data() as Map<String, dynamic>;
+
+              // تعبئة المتحكمات بالبيانات الحالية عند بدء التعديل
+              if (_isEditing && _nameController.text.isEmpty) {
+                _nameController.text = userData['name'] ?? '';
+                _usernameController.text = userData['username'] ?? '';
+                _phoneController.text = userData['phone'] ?? '';
+                _addressController.text = userData['address'] ?? '';
+              }
+
+              return FadeTransition(
+                opacity: _fadeAnimation,
+                child: _isEditing
+                    ? _buildEditProfileForm(
+                        userData, isVerySmallScreen, screenWidth)
+                    : _buildProfileView(
+                        userData, isVerySmallScreen, screenWidth),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 
-  // بناء رأس الصفحة (الصورة الخلفية والصورة الشخصية)
-  Widget _buildProfileHeader() {
-    return Stack(
-      clipBehavior: Clip.none,
-      alignment: Alignment.center,
-      children: [
-        // الصورة الخلفية
-        Container(
-          height: 180,
-          width: double.infinity,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                primaryColor,
-                secondaryColor,
-              ],
-            ),
-          ),
-        ),
-        
-        // الصورة الشخصية
-        Positioned(
-          bottom: -60,
-          child: Stack(
+  // بناء صفحة عرض الملف الشخصي
+  Widget _buildProfileView(Map<String, dynamic> userData,
+      bool isVerySmallScreen, double screenWidth) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // الصورة الخلفية والصورة الشخصية
+          Stack(
             clipBehavior: Clip.none,
+            alignment: Alignment.center,
             children: [
-              CircleAvatar(
-                radius: 60,
-                backgroundColor: Colors.white,
-                child: CircleAvatar(
-                  radius: 56,
-                  backgroundImage: _imageFile != null
-                      ? FileImage(_imageFile!) as ImageProvider
-                      : (_userData['profileImage'] != null
-                          ? NetworkImage(_userData['profileImage'])
-                          : const AssetImage('assets/images/default_profile.png')) as ImageProvider,
+              // الصورة الخلفية
+              Container(
+                height: isVerySmallScreen ? 120 : 150,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [primaryColor, secondaryColor],
+                  ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              
-              // زر تغيير الصورة
-              if (_isEditing)
-                Positioned(
-                  bottom: 0,
-                  right: 0,
+
+              // الصورة الشخصية
+              Positioned(
+                bottom: isVerySmallScreen ? -30 : -40,
+                child: CircleAvatar(
+                  radius: isVerySmallScreen ? 35 : 45,
+                  backgroundColor: Colors.white,
+                  child: CircleAvatar(
+                    radius: isVerySmallScreen ? 32 : 42,
+                    backgroundColor: Colors.green.shade100,
+                    backgroundImage: _getProfileImage(userData),
+                    child: _getProfileImage(userData) == null
+                        ? Icon(
+                            Icons.person,
+                            size: isVerySmallScreen ? 32 : 40,
+                            color: secondaryColor,
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+
+              // زر التعديل
+              Positioned(
+                top: 16,
+                right: 16,
+                child: CircleAvatar(
+                  backgroundColor: Colors.white.withOpacity(0.8),
+                  radius: isVerySmallScreen ? 18 : 22,
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.edit,
+                      color: secondaryColor,
+                      size: isVerySmallScreen ? 16 : 20,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _isEditing = true;
+                      });
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: isVerySmallScreen ? 40 : 50),
+
+          // اسم المستخدم
+          Text(
+            userData['name'] ?? '',
+            style: TextStyle(
+              fontSize: isVerySmallScreen ? 18 : 22,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Cairo',
+            ),
+          ),
+
+          // اسم المستخدم
+          Text(
+            '@${userData['username'] ?? ''}',
+            style: TextStyle(
+              fontSize: isVerySmallScreen ? 14 : 16,
+              color: Colors.grey,
+              fontFamily: 'Cairo',
+            ),
+          ),
+
+          SizedBox(height: isVerySmallScreen ? 16 : 20),
+
+          // معلومات الاتصال
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 8),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            elevation: 2,
+            child: Padding(
+              padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
+              child: Column(
+                children: [
+                  _buildInfoRow(
+                    Icons.email,
+                    'البريد الإلكتروني',
+                    userData['email'] ?? '',
+                    isVerySmallScreen,
+                  ),
+                  const Divider(),
+                  _buildInfoRow(
+                    Icons.phone,
+                    'رقم الهاتف',
+                    userData['phone'] ?? 'غير محدد',
+                    isVerySmallScreen,
+                  ),
+                  const Divider(),
+                  _buildInfoRow(
+                    Icons.location_on,
+                    'العنوان',
+                    userData['address'] ?? 'غير محدد',
+                    isVerySmallScreen,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          SizedBox(height: isVerySmallScreen ? 20 : 24),
+
+          // زر تسجيل الخروج
+          SizedBox(
+            width: double.infinity,
+            height: isVerySmallScreen ? 45 : 50,
+            child: ElevatedButton.icon(
+              icon: const Icon(Icons.logout),
+              label: Text(
+                'تسجيل الخروج',
+                style: TextStyle(
+                  fontSize: isVerySmallScreen ? 16 : 18,
+                  fontFamily: 'Cairo',
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade700,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              onPressed: _logout,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // بناء نموذج تعديل الملف الشخصي - مصحح
+  Widget _buildEditProfileForm(Map<String, dynamic> userData,
+      bool isVerySmallScreen, double screenWidth) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(height: isVerySmallScreen ? 10 : 16),
+
+          // صورة المستخدم مع زر الكاميرا المصحح
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              CircleAvatar(
+                radius: isVerySmallScreen ? 50 : 60,
+                backgroundColor: Colors.white,
+                child: CircleAvatar(
+                  radius: isVerySmallScreen ? 46 : 56,
+                  backgroundColor: Colors.green.shade100,
+                  backgroundImage: _getEditProfileImage(userData),
+                  child: _getEditProfileImage(userData) == null
+                      ? Icon(
+                          Icons.person,
+                          size: isVerySmallScreen ? 40 : 50,
+                          color: secondaryColor,
+                        )
+                      : null,
+                ),
+              ),
+              // زر الكاميرا المصحح
+              Positioned(
+                bottom: 0,
+                right: 0,
+                child: GestureDetector(
+                  onTap: _pickImage, // استدعاء الدالة المصححة
                   child: CircleAvatar(
                     backgroundColor: primaryColor,
-                    radius: 20,
-                    child: IconButton(
-                      icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
-                      onPressed: _pickImage,
+                    radius: isVerySmallScreen ? 16 : 20,
+                    child: Icon(
+                      Icons.camera_alt,
+                      color: Colors.white,
+                      size: isVerySmallScreen ? 16 : 20,
                     ),
                   ),
                 ),
+              ),
             ],
           ),
-        ),
-        
-        // زر التعديل
-        Positioned(
-          top: 16,
-          right: 16,
-          child: CircleAvatar(
-            backgroundColor: Colors.white.withOpacity(0.8),
-            child: IconButton(
-              icon: Icon(
-                _isEditing ? Icons.close : Icons.edit,
-                color: primaryColor,
-              ),
-              onPressed: () {
-                setState(() {
-                  _isEditing = !_isEditing;
-                  if (!_isEditing) {
-                    // إعادة تعيين القيم إذا تم إلغاء التعديل
-                    _nameController.text = _userData['name'] ?? '';
-                    _usernameController.text = _userData['username'] ?? '';
-                    _phoneController.text = _userData['phone'] ?? '';
-                    _addressController.text = _userData['address'] ?? '';
-                    _serviceTypeController.text = _userData['serviceType'] ?? '';
-                    _bioController.text = _userData['bio'] ?? '';
-                    _imageFile = null;
-                  }
-                });
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 
-  // بناء معلومات الملف الشخصي (وضع العرض)
-  Widget _buildProfileInfo() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        const SizedBox(height: 70),
-        
-        // اسم المستخدم
-        Text(
-          _userData['name'] ?? 'بائع',
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Cairo',
-          ),
-        ),
-        
-        // اسم المستخدم
-        Text(
-          '@${_userData['username'] ?? ''}',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.grey[600],
-            fontFamily: 'Cairo',
-          ),
-        ),
-        
-        // السيرة الذاتية
-        if (_userData['bio'] != null && _userData['bio'].isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(
-              _userData['bio'],
-              style: const TextStyle(
-                fontSize: 16,
-                fontFamily: 'Cairo',
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-        
-        const SizedBox(height: 24),
-        
-        // معلومات الاتصال
-        _buildInfoCard(
-          title: 'معلومات الاتصال',
-          items: [
-            InfoItem(
-              icon: Icons.phone,
-              title: 'رقم الهاتف',
-              value: _userData['phone'] ?? 'غير محدد',
-            ),
-            InfoItem(
-              icon: Icons.location_on,
-              title: 'العنوان',
-              value: _userData['address'] ?? 'غير محدد',
-            ),
-          ],
-        ),
-        
-        const SizedBox(height: 16),
-        
-        // معلومات النشاط التجاري
-        _buildInfoCard(
-          title: 'معلومات النشاط التجاري',
-          items: [
-            InfoItem(
-              icon: Icons.business,
-              title: 'نوع الخدمة',
-              value: _userData['serviceType'] ?? 'غير محدد',
-            ),
-            InfoItem(
-              icon: Icons.date_range,
-              title: 'تاريخ الانضمام',
-              value: _userData['createdAt'] != null
-                  ? _formatTimestamp(_userData['createdAt'])
-                  : 'غير محدد',
-            ),
-          ],
-        ),
-        
-        const SizedBox(height: 24),
-        
-        // زر تسجيل الخروج
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            icon: const Icon(Icons.logout),
-            label: const Text('تسجيل الخروج', style: TextStyle(fontSize: 16, fontFamily: 'Cairo')),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade700,
-              side: BorderSide(color: Colors.red.shade700),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onPressed: _logout,
-          ),
-        ),
-      ],
-    );
-  }
+          SizedBox(height: isVerySmallScreen ? 20 : 24),
 
-  // بناء نموذج التعديل
-  Widget _buildEditForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 70),
-        
-        // عنوان النموذج
-        const Text(
-          'تعديل الملف الشخصي',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'Cairo',
+          // حقول التعديل
+          _buildTextField(
+            controller: _nameController,
+            label: 'الاسم واللقب',
+            icon: Icons.person,
+            isVerySmallScreen: isVerySmallScreen,
           ),
-        ),
-        
-        const SizedBox(height: 24),
-        
-        // حقول الإدخال
-        _buildTextField(
-          controller: _nameController,
-          label: 'الاسم واللقب',
-          icon: Icons.person,
-        ),
-        const SizedBox(height: 16),
-        
-        _buildTextField(
-          controller: _usernameController,
-          label: 'اسم المستخدم',
-          icon: Icons.account_circle,
-        ),
-        const SizedBox(height: 16),
-        
-        _buildTextField(
-          controller: _phoneController,
-          label: 'رقم الهاتف',
-          icon: Icons.phone,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 16),
-        
-        _buildTextField(
-          controller: _addressController,
-          label: 'العنوان',
-          icon: Icons.location_on,
-        ),
-        const SizedBox(height: 16),
-        
-        _buildTextField(
-          controller: _serviceTypeController,
-          label: 'نوع الخدمة',
-          icon: Icons.business,
-        ),
-        const SizedBox(height: 16),
-        
-        _buildTextField(
-          controller: _bioController,
-          label: 'نبذة شخصية',
-          icon: Icons.info,
-          maxLines: 3,
-        ),
-        const SizedBox(height: 24),
-        
-        // زر الحفظ
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _saveChanges,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'حفظ التغييرات',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Cairo',
-              ),
-            ),
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
+
+          _buildTextField(
+            controller: _usernameController,
+            label: 'اسم المستخدم',
+            icon: Icons.account_circle,
+            isVerySmallScreen: isVerySmallScreen,
           ),
-        ),
-      ],
-    );
-  }
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
 
-  // بناء بطاقة معلومات
-  Widget _buildInfoCard({required String title, required List<InfoItem> items}) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Cairo',
-                color: secondaryColor,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...items.map((item) => _buildInfoItem(item)).toList(),
-          ],
-        ),
-      ),
-    );
-  }
+          _buildTextField(
+            controller: _phoneController,
+            label: 'رقم الهاتف',
+            icon: Icons.phone,
+            keyboardType: TextInputType.phone,
+            isVerySmallScreen: isVerySmallScreen,
+          ),
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
 
-  // بناء عنصر معلومات
-  Widget _buildInfoItem(InfoItem item) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12.0),
-      child: Row(
-        children: [
-          Icon(item.icon, color: primaryColor, size: 22),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          _buildTextField(
+            controller: _addressController,
+            label: 'العنوان',
+            icon: Icons.location_on,
+            isVerySmallScreen: isVerySmallScreen,
+          ),
+
+          SizedBox(height: isVerySmallScreen ? 24 : 32),
+
+          // أزرار الإلغاء والحفظ
+          Row(
             children: [
-              Text(
-                item.title,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey[600],
-                  fontFamily: 'Cairo',
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _isEditing = false;
+                      _imageFile = null;
+                      _base64Image = null;
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey[700],
+                    side: BorderSide(color: Colors.grey[300]!),
+                    padding: EdgeInsets.symmetric(
+                        vertical: isVerySmallScreen ? 12 : 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: Text(
+                    'إلغاء',
+                    style: TextStyle(
+                      fontSize: isVerySmallScreen ? 14 : 16,
+                      fontFamily: 'Cairo',
+                    ),
+                  ),
                 ),
               ),
-              Text(
-                item.value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Cairo',
+              const SizedBox(width: 16),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : () => _saveChanges(userData),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: secondaryColor,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                        vertical: isVerySmallScreen ? 12 : 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: _isLoading
+                      ? SizedBox(
+                          height: isVerySmallScreen ? 16 : 20,
+                          width: isVerySmallScreen ? 16 : 20,
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Text(
+                          'حفظ التغييرات',
+                          style: TextStyle(
+                            fontSize: isVerySmallScreen ? 14 : 16,
+                            fontFamily: 'Cairo',
+                          ),
+                        ),
                 ),
               ),
             ],
@@ -637,23 +677,59 @@ class _SellerProfileTabState extends State<SellerProfileTab> with SingleTickerPr
     );
   }
 
+  // الحصول على صورة الملف الشخصي من Base64
+  ImageProvider? _getProfileImage(Map<String, dynamic> userData) {
+    if (userData['profileImageBase64'] != null) {
+      try {
+        Uint8List bytes = base64Decode(userData['profileImageBase64']);
+        return MemoryImage(bytes);
+      } catch (e) {
+        print('خطأ في تحويل Base64 إلى صورة: $e');
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // الحصول على صورة الملف الشخصي أثناء التعديل
+  ImageProvider? _getEditProfileImage(Map<String, dynamic> userData) {
+    if (_imageFile != null) {
+      return FileImage(_imageFile!);
+    } else if (userData['profileImageBase64'] != null) {
+      try {
+        Uint8List bytes = base64Decode(userData['profileImageBase64']);
+        return MemoryImage(bytes);
+      } catch (e) {
+        print('خطأ في تحويل Base64 إلى صورة: $e');
+        return null;
+      }
+    }
+    return null;
+  }
+
   // بناء حقل إدخال
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
-    int maxLines = 1,
+    required bool isVerySmallScreen,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      maxLines: maxLines,
-      style: const TextStyle(fontFamily: 'Cairo'),
+      style: TextStyle(
+        fontFamily: 'Cairo',
+        fontSize: isVerySmallScreen ? 14 : 16,
+      ),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(fontFamily: 'Cairo', color: Colors.grey[700]),
-        prefixIcon: Icon(icon, color: primaryColor),
+        labelStyle: TextStyle(
+          fontFamily: 'Cairo',
+          color: Colors.grey[700],
+          fontSize: isVerySmallScreen ? 12 : 14,
+        ),
+        prefixIcon: Icon(icon, color: secondaryColor),
         filled: true,
         fillColor: Colors.white,
         enabledBorder: OutlineInputBorder(
@@ -662,29 +738,45 @@ class _SellerProfileTabState extends State<SellerProfileTab> with SingleTickerPr
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: primaryColor, width: 2),
+          borderSide: BorderSide(color: secondaryColor, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: isVerySmallScreen ? 12 : 16,
+        ),
       ),
     );
   }
 
-  // تنسيق الطابع الزمني
-  String _formatTimestamp(Timestamp timestamp) {
-    final date = timestamp.toDate();
-    return '${date.day}/${date.month}/${date.year}';
+  Widget _buildInfoRow(
+      IconData icon, String label, String value, bool isVerySmallScreen) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: isVerySmallScreen ? 6 : 8),
+      child: Row(
+        children: [
+          Icon(icon, color: secondaryColor, size: isVerySmallScreen ? 20 : 24),
+          const SizedBox(width: 12),
+          Text(
+            '$label:',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Cairo',
+              fontSize: isVerySmallScreen ? 12 : 14,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: isVerySmallScreen ? 12 : 14,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
   }
-}
-
-// فئة لتخزين معلومات العنصر
-class InfoItem {
-  final IconData icon;
-  final String title;
-  final String value;
-
-  InfoItem({
-    required this.icon,
-    required this.title,
-    required this.value,
-  });
 }

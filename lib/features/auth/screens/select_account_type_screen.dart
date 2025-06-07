@@ -8,6 +8,7 @@ class SelectAccountTypeScreen extends StatelessWidget {
     // ألوان متناسقة مع مشروع الري والهيدروليك
     final Color primaryColor = const Color(0xFF1976D2); // أزرق مائي
     final Color secondaryColor = const Color(0xFF2F5233); // أخضر داكن
+    final Color deliveryColor = const Color(0xFFFF6B35); // برتقالي للتوصيل
     final Color backgroundColor = const Color(0xFFF5F7FA); // رمادي فاتح
 
     return Scaffold(
@@ -31,6 +32,8 @@ class SelectAccountTypeScreen extends StatelessWidget {
       ),
       body: LayoutBuilder(
         builder: (context, constraints) {
+          final isSmallScreen = constraints.maxHeight < 600;
+          
           return Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -44,10 +47,10 @@ class SelectAccountTypeScreen extends StatelessWidget {
             ),
             child: SafeArea(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0),
+                padding: EdgeInsets.all(isSmallScreen ? 16.0 : 24.0),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    minHeight: constraints.maxHeight - 48,
+                    minHeight: constraints.maxHeight - (isSmallScreen ? 32 : 48),
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -56,24 +59,24 @@ class SelectAccountTypeScreen extends StatelessWidget {
                       Text(
                         'مرحبًا بك في تطبيق RAWAA',
                         style: TextStyle(
-                          fontSize: 24,
+                          fontSize: isSmallScreen ? 20 : 24,
                           fontWeight: FontWeight.bold,
                           color: primaryColor,
                           fontFamily: 'Cairo',
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 12),
+                      SizedBox(height: isSmallScreen ? 8 : 12),
                       Text(
                         'اختر نوع الحساب الذي تريد إنشاءه',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: isSmallScreen ? 14 : 16,
                           color: Colors.grey[700],
                           fontFamily: 'Cairo',
                         ),
                         textAlign: TextAlign.center,
                       ),
-                      const SizedBox(height: 50),
+                      SizedBox(height: isSmallScreen ? 30 : 40),
                       
                       // بطاقة حساب الزبون
                       _buildAccountTypeCard(
@@ -83,9 +86,10 @@ class SelectAccountTypeScreen extends StatelessWidget {
                         icon: Icons.person,
                         color: primaryColor,
                         route: '/register_customer',
+                        isSmallScreen: isSmallScreen,
                       ),
                       
-                      const SizedBox(height: 24),
+                      SizedBox(height: isSmallScreen ? 16 : 20),
                       
                       // بطاقة حساب البائع
                       _buildAccountTypeCard(
@@ -95,19 +99,39 @@ class SelectAccountTypeScreen extends StatelessWidget {
                         icon: Icons.store,
                         color: secondaryColor,
                         route: '/register_seller',
+                        isSmallScreen: isSmallScreen,
                       ),
                       
-                      const SizedBox(height: 40),
+                      SizedBox(height: isSmallScreen ? 16 : 20),
+                      
+                      // بطاقة حساب عامل التوصيل (جديد)
+                      _buildAccountTypeCard(
+                        context: context,
+                        title: 'حساب عامل توصيل',
+                        subtitle: 'انضم إلى فريق التوصيل واربح المال',
+                        icon: Icons.delivery_dining,
+                        color: deliveryColor,
+                        route: '/register_delivery',
+                        isSmallScreen: isSmallScreen,
+                      ),
+                      
+                      SizedBox(height: isSmallScreen ? 24 : 32),
                       
                       // زر العودة لتسجيل الدخول
                       TextButton(
                         onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isSmallScreen ? 12 : 16,
+                            vertical: isSmallScreen ? 8 : 12,
+                          ),
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               Icons.arrow_back_ios_new,
-                              size: 16,
+                              size: isSmallScreen ? 14 : 16,
                               color: primaryColor,
                             ),
                             const SizedBox(width: 8),
@@ -117,6 +141,7 @@ class SelectAccountTypeScreen extends StatelessWidget {
                                 color: primaryColor,
                                 fontFamily: 'Cairo',
                                 fontWeight: FontWeight.bold,
+                                fontSize: isSmallScreen ? 13 : 15,
                               ),
                             ),
                           ],
@@ -133,7 +158,7 @@ class SelectAccountTypeScreen extends StatelessWidget {
     );
   }
 
-  // دالة لإنشاء بطاقة نوع الحساب
+  // دالة لإنشاء بطاقة نوع الحساب مع تحسينات للشاشات الصغيرة
   Widget _buildAccountTypeCard({
     required BuildContext context,
     required String title,
@@ -141,6 +166,7 @@ class SelectAccountTypeScreen extends StatelessWidget {
     required IconData icon,
     required Color color,
     required String route,
+    required bool isSmallScreen,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -161,41 +187,42 @@ class SelectAccountTypeScreen extends StatelessWidget {
           onTap: () => Navigator.pushNamed(context, route),
           borderRadius: BorderRadius.circular(20),
           child: Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: EdgeInsets.all(isSmallScreen ? 16.0 : 20.0),
             child: Column(
               children: [
                 CircleAvatar(
-                  radius: 40,
+                  radius: isSmallScreen ? 32 : 40,
                   backgroundColor: color.withOpacity(0.1),
                   child: Icon(
                     icon,
-                    size: 40,
+                    size: isSmallScreen ? 32 : 40,
                     color: color,
                   ),
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: isSmallScreen ? 12 : 16),
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 20,
+                    fontSize: isSmallScreen ? 18 : 20,
                     fontWeight: FontWeight.bold,
                     color: color,
                     fontFamily: 'Cairo',
                   ),
                 ),
-                const SizedBox(height: 8),
+                SizedBox(height: isSmallScreen ? 6 : 8),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: isSmallScreen ? 12 : 14,
                     color: Colors.grey[600],
                     fontFamily: 'Cairo',
+                    height: 1.3,
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 16),
+                SizedBox(height: isSmallScreen ? 12 : 16),
                 Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
@@ -206,12 +233,21 @@ class SelectAccountTypeScreen extends StatelessWidget {
                       ],
                     ),
                     borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: color.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
                   ),
                   child: TextButton(
                     onPressed: () => Navigator.pushNamed(context, route),
                     style: TextButton.styleFrom(
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: EdgeInsets.symmetric(
+                        vertical: isSmallScreen ? 10 : 12,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -219,7 +255,7 @@ class SelectAccountTypeScreen extends StatelessWidget {
                     child: Text(
                       'اختيار',
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: isSmallScreen ? 14 : 16,
                         fontWeight: FontWeight.bold,
                         fontFamily: 'Cairo',
                       ),

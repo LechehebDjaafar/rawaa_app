@@ -2,49 +2,120 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:path/path.dart' as path;
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 
 class SellerProductsTab extends StatefulWidget {
-  const SellerProductsTab({Key? key}) : super(key: key);
+  const SellerProductsTab({super.key});
 
   @override
   State<SellerProductsTab> createState() => _SellerProductsTabState();
 }
 
 class _SellerProductsTabState extends State<SellerProductsTab> with SingleTickerProviderStateMixin {
-  // استخدام Firestore بدلاً من Realtime Database
+  // استخدام Firestore بدلاً من Firebase Storage
   final CollectionReference _productsCollection = FirebaseFirestore.instance.collection('products');
-  final FirebaseStorage _storage = FirebaseStorage.instance;
   
   // متحكمات الإدخال
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
-  final TextEditingController _categoryController = TextEditingController();
   final TextEditingController _stockController = TextEditingController();
   
   // متغيرات للصورة
   File? _imageFile;
+  String? _base64Image;
   bool _isUploading = false;
   bool _isEditing = false;
   String? _editingProductId;
   
+  // متغير الفئة المختارة
+  String? _selectedCategory;
+  
+  // قائمة الفئات الهيدروليكية المحددة مسبقاً
+  final List<Map<String, dynamic>> _hydraulicCategories = [
+    {
+      'name': 'معدات الهيدروليك الصناعية',
+      'subcategories': [
+        'مضخات هيدروليكية',
+        'محركات هيدروليكية', 
+        'أسطوانات هيدروليكية',
+      ]
+    },
+    {
+      'name': 'الأنابيب والوصلات',
+      'subcategories': [
+        'خراطيم هيدروليكية',
+        'وصلات سريعة',
+        'وصلات معدنية',
+        'أنابيب فولاذية',
+      ]
+    },
+    {
+      'name': 'الصمامات',
+      'subcategories': [
+        'صمامات تحكم',
+        'صمامات اتجاهية',
+        'صمامات أمان',
+        'موزعات هيدروليكية',
+      ]
+    },
+    {
+      'name': 'معدات الصيانة وقطع الغيار',
+      'subcategories': [
+        'فلاتر هيدروليكية',
+        'زيوت هيدروليكية',
+        'مانعات تسرب',
+        'حلقات مطاطية',
+      ]
+    },
+    {
+      'name': 'أنظمة التحكم والقياس',
+      'subcategories': [
+        'مقاييس ضغط',
+        'مستشعرات',
+        'أدوات تحليل',
+        'أجهزة قياس التدفق',
+      ]
+    },
+    {
+      'name': 'معدات متنقلة أو ثقيلة',
+      'subcategories': [
+        'رافعات هيدروليكية',
+        'ملحقات آلات البناء',
+        'معدات الحفر',
+        'أنظمة الرفع',
+      ]
+    },
+    {
+      'name': 'الخدمات والتكوين',
+      'subcategories': [
+        'خدمات التركيب',
+        'خدمات الصيانة',
+        'التدريب والتكوين',
+        'الاستشارات الفنية',
+      ]
+    },
+  ];
+  
+  // قائمة مسطحة لجميع الفئات والفئات الفرعية
+  List<String> _allCategories = [];
+  
   // ألوان التطبيق
-  final Color primaryColor = const Color(0xFF1976D2); // أزرق مائي
-  final Color secondaryColor = const Color(0xFF2F5233); // أخضر داكن
-  final Color accentColor = const Color(0xFFFF8A65); // برتقالي فاتح
-  final Color backgroundColor = const Color(0xFFF5F7FA); // رمادي فاتح
+  final Color primaryColor = const Color(0xFF1976D2);
+  final Color secondaryColor = const Color.fromARGB(255, 78, 94, 243);
+  final Color accentColor = const Color(0xFFFF8A65);
+  final Color backgroundColor = const Color(0xFFF5F7FA);
   
   // متغيرات للأنيميشن
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
-  
+
   @override
   void initState() {
     super.initState();
     
-    // إعداد الأنيميشن
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -57,187 +128,201 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       ),
     );
     
+    _initializeCategories();
     _animationController.forward();
-    
-    // التحقق من وجود مجموعة المنتجات
     _ensureProductsCollectionExists();
+  }
+
+  // تهيئة قائمة الفئات المسطحة
+  void _initializeCategories() {
+    _allCategories.clear();
+    
+    for (var category in _hydraulicCategories) {
+      // إضافة الفئة الرئيسية
+      _allCategories.add(category['name']);
+      
+      // إضافة الفئات الفرعية
+      for (var subcategory in category['subcategories']) {
+        _allCategories.add('${category['name']} - $subcategory');
+      }
+    }
   }
 
   // التأكد من وجود مجموعة المنتجات
   Future<void> _ensureProductsCollectionExists() async {
     try {
-      // محاولة الحصول على وثيقة واحدة للتحقق من وجود المجموعة
       final snapshot = await _productsCollection.limit(1).get();
-      
-      // إذا لم تكن المجموعة موجودة، سنضيف وثيقة مؤقتة ثم نحذفها
       if (snapshot.docs.isEmpty) {
         print('إنشاء مجموعة المنتجات لأول مرة');
-        
-        // إضافة وثيقة مؤقتة
         DocumentReference tempDoc = await _productsCollection.add({
           'temp': true,
           'createdAt': FieldValue.serverTimestamp(),
         });
-        
-        // حذف الوثيقة المؤقتة
         await tempDoc.delete();
       }
     } catch (e) {
       print('خطأ في التحقق من وجود مجموعة المنتجات: $e');
     }
   }
-  
+
   @override
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
     _priceController.dispose();
-    _categoryController.dispose();
     _stockController.dispose();
     _animationController.dispose();
     super.dispose();
   }
 
-  // اختيار صورة من المعرض
+  // اختيار صورة من المعرض وتحويلها إلى Base64
   Future<void> _pickImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery);
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedImage = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 70,
+      );
+      
+      if (pickedImage != null) {
+        final File imageFile = File(pickedImage.path);
+        if (await imageFile.exists()) {
+          setState(() {
+            _imageFile = imageFile;
+          });
+          
+          // تحويل الصورة إلى Base64
+          await _convertImageToBase64();
+        }
+      }
+    } catch (e) {
+      _showErrorSnackBar('فشل في اختيار الصورة: $e');
+    }
+  }
+
+  // تحويل الصورة إلى Base64 مع ضغط
+  Future<void> _convertImageToBase64() async {
+    if (_imageFile == null) return;
     
-    if (pickedImage != null) {
+    try {
+      if (!await _imageFile!.exists()) {
+        _showErrorSnackBar('الملف غير موجود');
+        return;
+      }
+
+      Uint8List imageBytes = await _imageFile!.readAsBytes();
+
+      // فك تشفير الصورة وضغطها
+      img.Image? image = img.decodeImage(imageBytes);
+      if (image == null) {
+        _showErrorSnackBar('فشل في معالجة الصورة');
+        return;
+      }
+
+      // تغيير حجم الصورة إذا كانت كبيرة
+      if (image.width > 400 || image.height > 400) {
+        image = img.copyResize(
+          image,
+          width: image.width > image.height ? 400 : null,
+          height: image.height > image.width ? 400 : null,
+        );
+      }
+
+      // ضغط الصورة وتحويلها إلى JPEG
+      List<int> compressedBytes = img.encodeJpg(image, quality: 60);
+
+      // التحقق من الحجم النهائي
+      if (compressedBytes.length > 1024 * 1024) {
+        compressedBytes = img.encodeJpg(image, quality: 40);
+      }
+
+      // تحويل إلى Base64
+      String base64String = base64Encode(compressedBytes);
+
       setState(() {
-        _imageFile = File(pickedImage.path);
+        _base64Image = base64String;
+      });
+
+      _showSuccessSnackBar('تم تحضير الصورة بنجاح');
+    } catch (e) {
+      _showErrorSnackBar('فشل في معالجة الصورة: $e');
+      setState(() {
+        _imageFile = null;
+        _base64Image = null;
       });
     }
   }
-  
-  // رفع الصورة إلى Firebase Storage
-  Future<String?> _uploadImage(String productId) async {
-    if (_imageFile == null) return null;
-    
-    try {
-      final String fileName = path.basename(_imageFile!.path);
-      final Reference storageRef = _storage.ref().child('products/$productId/$fileName');
-      
-      final UploadTask uploadTask = storageRef.putFile(_imageFile!);
-      final TaskSnapshot snapshot = await uploadTask;
-      
-      return await snapshot.ref.getDownloadURL();
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('فشل رفع الصورة: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return null;
-    }
-  }
-  
-  // إضافة أو تعديل منتج
+
+  // إضافة أو تعديل منتج مع Base64
   Future<void> _saveProduct() async {
     final String name = _nameController.text.trim();
     final String description = _descriptionController.text.trim();
     final double? price = double.tryParse(_priceController.text.trim());
-    final String category = _categoryController.text.trim();
     final int? stock = int.tryParse(_stockController.text.trim());
-    
-    if (name.isEmpty || description.isEmpty || price == null || category.isEmpty || stock == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('يرجى ملء جميع الحقول المطلوبة'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+
+    if (name.isEmpty || description.isEmpty || price == null || _selectedCategory == null || stock == null) {
+      _showErrorSnackBar('يرجى ملء جميع الحقول المطلوبة واختيار فئة المنتج');
       return;
     }
-    
+
     setState(() {
       _isUploading = true;
     });
-    
+
     try {
-      String? imageUrl;
-      
       if (_isEditing && _editingProductId != null) {
         // تعديل منتج موجود
         final String productId = _editingProductId!;
         
-        // إذا تم اختيار صورة جديدة، قم برفعها
-        if (_imageFile != null) {
-          imageUrl = await _uploadImage(productId);
-        }
-        
-        // تحديث بيانات المنتج
         final Map<String, dynamic> updates = {
           'name': name,
           'description': description,
           'price': price,
-          'category': category,
+          'category': _selectedCategory,
           'stock': stock,
           'updatedAt': FieldValue.serverTimestamp(),
+          'searchKeywords': _generateSearchKeywords(name, _selectedCategory!),
         };
-        
-        // إضافة الصورة الجديدة فقط إذا تم اختيارها
-        if (imageUrl != null) {
-          updates['imageUrl'] = imageUrl;
+
+        // إضافة الصورة المحولة إلى Base64 إذا تم اختيار صورة جديدة
+        if (_base64Image != null) {
+          updates['imageBase64'] = _base64Image;
+          updates['hasImage'] = true;
         }
-        
+
         await _productsCollection.doc(productId).update(updates);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تم تعديل المنتج بنجاح'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        _showSuccessSnackBar('تم تعديل المنتج بنجاح');
       } else {
         // إنشاء منتج جديد
         final String sellerId = "current_user_id"; // استبدل هذا بمعرف المستخدم الحالي
         
-        // رفع الصورة إذا كانت موجودة
-        final DocumentReference newProductRef = await _productsCollection.add({
+        final Map<String, dynamic> productData = {
           'name': name,
           'description': description,
           'price': price,
-          'category': category,
+          'category': _selectedCategory,
           'stock': stock,
           'sellerId': sellerId,
           'createdAt': FieldValue.serverTimestamp(),
-        });
-        
-        final String productId = newProductRef.id;
-        
-        if (_imageFile != null) {
-          imageUrl = await _uploadImage(productId);
-          if (imageUrl != null) {
-            await newProductRef.update({'imageUrl': imageUrl});
-          }
+          'searchKeywords': _generateSearchKeywords(name, _selectedCategory!),
+        };
+
+        // إضافة الصورة المحولة إلى Base64 إذا كانت موجودة
+        if (_base64Image != null) {
+          productData['imageBase64'] = _base64Image;
+          productData['hasImage'] = true;
         }
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('تمت إضافة المنتج بنجاح'),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+
+        await _productsCollection.add(productData);
+        _showSuccessSnackBar('تمت إضافة المنتج بنجاح');
       }
-      
-      // مسح الحقول بعد الإضافة
+
       _clearForm();
-      Navigator.pop(context); // إغلاق نافذة الإضافة/التعديل
-      
+      Navigator.pop(context);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showErrorSnackBar('حدث خطأ: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -246,21 +331,39 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       }
     }
   }
-  
+
+  // توليد كلمات مفتاحية للبحث
+  List<String> _generateSearchKeywords(String name, String category) {
+    List<String> keywords = [];
+    
+    // إضافة كلمات من اسم المنتج
+    keywords.addAll(name.toLowerCase().split(' '));
+    
+    // إضافة كلمات من الفئة
+    keywords.addAll(category.toLowerCase().split(' '));
+    keywords.addAll(category.toLowerCase().split(' - '));
+    
+    // إزالة الكلمات المكررة والفارغة
+    keywords = keywords.where((keyword) => keyword.isNotEmpty).toSet().toList();
+    
+    return keywords;
+  }
+
   // مسح النموذج
   void _clearForm() {
     setState(() {
       _nameController.clear();
       _descriptionController.clear();
       _priceController.clear();
-      _categoryController.clear();
       _stockController.clear();
+      _selectedCategory = null;
       _imageFile = null;
+      _base64Image = null;
       _isEditing = false;
       _editingProductId = null;
     });
   }
-  
+
   // تعبئة النموذج بمنتج للتعديل
   void _editProduct(Map<String, dynamic> product, String productId) {
     setState(() {
@@ -269,10 +372,9 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       _nameController.text = product['name'] ?? '';
       _descriptionController.text = product['description'] ?? '';
       _priceController.text = product['price']?.toString() ?? '';
-      _categoryController.text = product['category'] ?? '';
+      _selectedCategory = product['category'];
       _stockController.text = product['stock']?.toString() ?? '';
     });
-    
     _showAddProductSheet();
   }
 
@@ -294,21 +396,9 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
               Navigator.pop(context);
               try {
                 await _productsCollection.doc(productId).delete();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('تم حذف المنتج بنجاح'),
-                    backgroundColor: Colors.green,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showSuccessSnackBar('تم حذف المنتج بنجاح');
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('فشل حذف المنتج: $e'),
-                    backgroundColor: Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                _showErrorSnackBar('فشل حذف المنتج: $e');
               }
             },
             style: ElevatedButton.styleFrom(
@@ -321,178 +411,169 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       ),
     );
   }
-  
-  // عرض نافذة إضافة/تعديل منتج
+
+  // عرض نافذة إضافة/تعديل منتج - مرنة
   void _showAddProductSheet() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final screenHeight = constraints.maxHeight;
+          final isVerySmallScreen = screenHeight < 500;
+          
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _isEditing ? 'تعديل المنتج' : 'إضافة منتج جديد',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'Cairo',
-                        color: primaryColor,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _isEditing ? 'تعديل المنتج' : 'إضافة منتج جديد',
+                          style: TextStyle(
+                            fontSize: isVerySmallScreen ? 16 : 18,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Cairo',
+                            color: primaryColor,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.close,
+                            size: isVerySmallScreen ? 20 : 24,
+                          ),
+                          onPressed: () {
+                            _clearForm();
+                            Navigator.pop(context);
+                          },
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        _clearForm();
-                        Navigator.pop(context);
-                      },
-                    ),
+                    const Divider(),
+                    SizedBox(height: isVerySmallScreen ? 12 : 16),
+                    _buildProductForm(isVerySmallScreen),
                   ],
                 ),
-                const Divider(),
-                const SizedBox(height: 16),
-                _buildProductForm(),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 
-  // نموذج إضافة/تعديل منتج
-  Widget _buildProductForm() {
+  // نموذج إضافة/تعديل منتج - مرن مع قائمة الفئات المحددة
+  Widget _buildProductForm(bool isVerySmallScreen) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // صورة المنتج
+        // صورة المنتج مع Base64
         Center(
           child: GestureDetector(
             onTap: _pickImage,
             child: Container(
-              width: 120,
-              height: 120,
+              width: isVerySmallScreen ? 100 : 120,
+              height: isVerySmallScreen ? 100 : 120,
               decoration: BoxDecoration(
                 color: backgroundColor,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey[300]!),
               ),
-              child: _imageFile != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.file(_imageFile!, fit: BoxFit.cover),
-                    )
-                  : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.add_photo_alternate_outlined, size: 40, color: primaryColor.withOpacity(0.7)),
-                        const SizedBox(height: 8),
-                        Text(
-                          'إضافة صورة',
-                          style: TextStyle(
-                            fontFamily: 'Cairo',
-                            color: primaryColor,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
+              child: _getImageWidget(isVerySmallScreen),
             ),
           ),
         ),
-        const SizedBox(height: 20),
-        
+        SizedBox(height: isVerySmallScreen ? 16 : 20),
+
         // اسم المنتج
         _buildTextField(
           controller: _nameController,
           label: 'اسم المنتج',
           icon: Icons.shopping_bag_outlined,
+          isVerySmallScreen: isVerySmallScreen,
         ),
-        const SizedBox(height: 16),
-        
+        SizedBox(height: isVerySmallScreen ? 12 : 16),
+
         // وصف المنتج
         _buildTextField(
           controller: _descriptionController,
           label: 'وصف المنتج',
           icon: Icons.description_outlined,
           maxLines: 3,
+          isVerySmallScreen: isVerySmallScreen,
         ),
-        const SizedBox(height: 16),
-        
-        // فئة المنتج
-        _buildTextField(
-          controller: _categoryController,
-          label: 'فئة المنتج',
-          icon: Icons.category_outlined,
-        ),
-        const SizedBox(height: 16),
-        
+        SizedBox(height: isVerySmallScreen ? 12 : 16),
+
+        // قائمة منسدلة للفئات
+        _buildCategoryDropdown(isVerySmallScreen),
+        SizedBox(height: isVerySmallScreen ? 12 : 16),
+
         // سعر المنتج والكمية
         Row(
           children: [
             Expanded(
               child: _buildTextField(
                 controller: _priceController,
-                label: 'السعر (دج)',
+                label: 'السعر (د.ج)',
                 icon: Icons.attach_money,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                isVerySmallScreen: isVerySmallScreen,
               ),
             ),
-            const SizedBox(width: 12),
+            SizedBox(width: isVerySmallScreen ? 8 : 12),
             Expanded(
               child: _buildTextField(
                 controller: _stockController,
                 label: 'الكمية المتوفرة',
                 icon: Icons.inventory_outlined,
                 keyboardType: TextInputType.number,
+                isVerySmallScreen: isVerySmallScreen,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 24),
-        
+        SizedBox(height: isVerySmallScreen ? 20 : 24),
+
         // زر الإضافة/التعديل
         SizedBox(
           width: double.infinity,
+          height: isVerySmallScreen ? 40 : 48,
           child: ElevatedButton(
             onPressed: _isUploading ? null : _saveProduct,
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryColor,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
               elevation: 0,
             ),
             child: _isUploading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(
+                ? SizedBox(
+                    height: isVerySmallScreen ? 16 : 20,
+                    width: isVerySmallScreen ? 16 : 20,
+                    child: const CircularProgressIndicator(
                       strokeWidth: 2,
                       color: Colors.white,
                     ),
                   )
                 : Text(
                     _isEditing ? 'تعديل المنتج' : 'إضافة المنتج',
-                    style: const TextStyle(
-                      fontSize: 16,
+                    style: TextStyle(
+                      fontSize: isVerySmallScreen ? 14 : 16,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'Cairo',
                     ),
@@ -502,24 +583,131 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       ],
     );
   }
-  
-  // حقل إدخال موحد
+
+  // بناء قائمة منسدلة للفئات الهيدروليكية
+  Widget _buildCategoryDropdown(bool isVerySmallScreen) {
+    return Container(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _selectedCategory,
+        decoration: InputDecoration(
+          labelText: 'فئة المنتج',
+          labelStyle: TextStyle(
+            fontFamily: 'Cairo',
+            color: Colors.grey[700],
+            fontSize: isVerySmallScreen ? 12 : 14,
+          ),
+          prefixIcon: Icon(
+            Icons.category_outlined,
+            color: primaryColor,
+            size: isVerySmallScreen ? 20 : 22,
+          ),
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: isVerySmallScreen ? 12 : 16,
+            vertical: isVerySmallScreen ? 12 : 16,
+          ),
+        ),
+        style: TextStyle(
+          fontFamily: 'Cairo',
+          fontSize: isVerySmallScreen ? 14 : 16,
+          color: Colors.black87,
+        ),
+        dropdownColor: Colors.white,
+        isExpanded: true,
+        items: _allCategories.map((String category) {
+          return DropdownMenuItem<String>(
+            value: category,
+            child: Text(
+              category,
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: isVerySmallScreen ? 12 : 14,
+                color: category.contains(' - ') ? Colors.grey[600] : Colors.black87,
+                fontWeight: category.contains(' - ') ? FontWeight.normal : FontWeight.bold,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
+        onChanged: (String? newValue) {
+          setState(() {
+            _selectedCategory = newValue;
+          });
+        },
+        validator: (value) {
+          if (value == null || value.isEmpty) {
+            return 'يرجى اختيار فئة المنتج';
+          }
+          return null;
+        },
+      ),
+    );
+  }
+
+  // الحصول على widget الصورة مع دعم Base64
+  Widget _getImageWidget(bool isVerySmallScreen) {
+    if (_imageFile != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(_imageFile!, fit: BoxFit.cover),
+      );
+    } else {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.add_photo_alternate_outlined,
+            size: isVerySmallScreen ? 30 : 40,
+            color: primaryColor.withOpacity(0.7),
+          ),
+          SizedBox(height: isVerySmallScreen ? 4 : 8),
+          Text(
+            'إضافة صورة',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              color: primaryColor,
+              fontSize: isVerySmallScreen ? 10 : 12,
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
+  // حقل إدخال موحد - مرن
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    required bool isVerySmallScreen,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
-      style: const TextStyle(fontFamily: 'Cairo'),
+      style: TextStyle(
+        fontFamily: 'Cairo',
+        fontSize: isVerySmallScreen ? 14 : 16,
+      ),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(fontFamily: 'Cairo', color: Colors.grey[700]),
-        prefixIcon: Icon(icon, color: primaryColor, size: 22),
+        labelStyle: TextStyle(
+          fontFamily: 'Cairo',
+          color: Colors.grey[700],
+          fontSize: isVerySmallScreen ? 12 : 14,
+        ),
+        prefixIcon: Icon(
+          icon,
+          color: primaryColor,
+          size: isVerySmallScreen ? 20 : 22,
+        ),
         filled: true,
         fillColor: backgroundColor,
         enabledBorder: OutlineInputBorder(
@@ -530,86 +718,115 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: primaryColor, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: isVerySmallScreen ? 12 : 16,
+          vertical: isVerySmallScreen ? 12 : 16,
+        ),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'منتجاتي',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Cairo',
-                      color: secondaryColor,
-                    ),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      _clearForm();
-                      _showAddProductSheet();
-                    },
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('إضافة منتج', style: TextStyle(fontFamily: 'Cairo')),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        final screenHeight = constraints.maxHeight;
+        final isSmallScreen = screenWidth < 600;
+        final isVerySmallScreen = screenHeight < 500;
+        
+        return Scaffold(
+          backgroundColor: backgroundColor,
+          body: FadeTransition(
+            opacity: _fadeAnimation,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'منتجاتي',
+                        style: TextStyle(
+                          fontSize: isVerySmallScreen ? 18 : 20,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Cairo',
+                          color: secondaryColor,
+                        ),
                       ),
-                    ),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          _clearForm();
+                          _showAddProductSheet();
+                        },
+                        icon: Icon(
+                          Icons.add,
+                          size: isVerySmallScreen ? 16 : 18,
+                        ),
+                        label: Text(
+                          'إضافة منتج',
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontSize: isVerySmallScreen ? 12 : 14,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isVerySmallScreen ? 12 : 16,
+                            vertical: isVerySmallScreen ? 8 : 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Expanded(
+                  child: _buildProductsList(isSmallScreen, isVerySmallScreen),
+                ),
+              ],
             ),
-            Expanded(
-              child: _buildProductsList(),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildProductsList() {
+  Widget _buildProductsList(bool isSmallScreen, bool isVerySmallScreen) {
     return StreamBuilder<QuerySnapshot>(
       stream: _productsCollection.snapshots(),
       builder: (context, snapshot) {
-        // حالة التحميل
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
-            child: CircularProgressIndicator(
-              color: primaryColor,
-            ),
+            child: CircularProgressIndicator(color: primaryColor),
           );
         }
 
-        // حالة الخطأ
         if (snapshot.hasError) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.error_outline, size: 60, color: Colors.red[300]),
-                const SizedBox(height: 16),
+                Icon(
+                  Icons.error_outline,
+                  size: isVerySmallScreen ? 50 : 60,
+                  color: Colors.red[300],
+                ),
+                SizedBox(height: isVerySmallScreen ? 12 : 16),
                 Text(
                   'حدث خطأ: ${snapshot.error}',
-                  style: const TextStyle(fontFamily: 'Cairo', fontSize: 16, color: Colors.red),
+                  style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: isVerySmallScreen ? 14 : 16,
+                    color: Colors.red,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -617,33 +834,51 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
           );
         }
 
-        // حالة عدم وجود بيانات
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return _buildEmptyProductsView();
+          return _buildEmptyProductsView(isVerySmallScreen);
         }
 
-        // عرض المنتجات
         final products = snapshot.data!.docs;
+
+        // تحديد عدد الأعمدة ونسب العرض إلى الارتفاع حسب حجم الشاشة
+        int crossAxisCount;
+        double childAspectRatio;
+        double horizontalPadding;
+        double verticalSpacing;
         
+        if (isSmallScreen) {
+          crossAxisCount = 2;
+          childAspectRatio = isVerySmallScreen ? 0.55 : 0.6;
+          horizontalPadding = 12;
+          verticalSpacing = 12;
+        } else {
+          crossAxisCount = 3;
+          childAspectRatio = 0.7;
+          horizontalPadding = 16;
+          verticalSpacing = 16;
+        }
+
         return RefreshIndicator(
           onRefresh: () async {
             setState(() {});
           },
           color: primaryColor,
           child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.75,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalSpacing,
+            ),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: crossAxisCount,
+              childAspectRatio: childAspectRatio,
+              crossAxisSpacing: horizontalPadding,
+              mainAxisSpacing: verticalSpacing,
             ),
             itemCount: products.length,
             itemBuilder: (context, index) {
               final product = products[index].data() as Map<String, dynamic>;
               final productId = products[index].id;
-              
-              return _buildProductCard(product, productId);
+              return _buildProductCard(product, productId, isVerySmallScreen);
             },
           ),
         );
@@ -651,200 +886,304 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     );
   }
 
-  // دالة لعرض حالة عدم وجود منتجات
-  Widget _buildEmptyProductsView() {
+  // دالة لعرض حالة عدم وجود منتجات - مرنة
+  Widget _buildEmptyProductsView(bool isVerySmallScreen) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            size: 80,
-            color: Colors.grey[400],
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'لا يوجد منتجات بعد',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
+      child: Padding(
+        padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.inventory_2_outlined,
+              size: isVerySmallScreen ? 60 : 80,
+              color: Colors.grey[400],
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'قم بإضافة منتجك الأول بالضغط على زر "إضافة منتج"',
-            style: TextStyle(
-              fontFamily: 'Cairo',
-              fontSize: 14,
-              color: Colors.grey,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: () {
-              _clearForm();
-              _showAddProductSheet();
-            },
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('إضافة منتج جديد', style: TextStyle(fontFamily: 'Cairo')),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            SizedBox(height: isVerySmallScreen ? 12 : 16),
+            Text(
+              'لا يوجد منتجات بعد',
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: isVerySmallScreen ? 16 : 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
               ),
             ),
-          ),
-        ],
+            SizedBox(height: isVerySmallScreen ? 6 : 8),
+            Text(
+              'قم بإضافة منتجك الأول بالضغط على زر "إضافة منتج"',
+              style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: isVerySmallScreen ? 12 : 14,
+                color: Colors.grey,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: isVerySmallScreen ? 20 : 24),
+            ElevatedButton.icon(
+              onPressed: () {
+                _clearForm();
+                _showAddProductSheet();
+              },
+              icon: Icon(
+                Icons.add,
+                size: isVerySmallScreen ? 16 : 18,
+              ),
+              label: Text(
+                'إضافة منتج جديد',
+                style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: isVerySmallScreen ? 14 : 16,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: primaryColor,
+                foregroundColor: Colors.white,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isVerySmallScreen ? 20 : 24,
+                  vertical: isVerySmallScreen ? 10 : 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // دالة لبناء بطاقة المنتج
-  Widget _buildProductCard(Map<String, dynamic> product, String productId) {
+  // دالة لبناء بطاقة المنتج - مرنة مع دعم Base64
+  Widget _buildProductCard(Map<String, dynamic> product, String productId, bool isVerySmallScreen) {
     return Card(
       elevation: 2,
       shadowColor: Colors.black26,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // صورة المنتج
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-            child: Stack(
-              children: [
-                Container(
-                  height: 120,
-                  width: double.infinity,
-                  color: Colors.grey[200],
-                  child: product['imageUrl'] != null
-                      ? Image.network(
-                          product['imageUrl'],
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.image_not_supported,
-                            size: 40,
-                            color: Colors.grey[400],
-                          ),
-                        )
-                      : Icon(
-                          Icons.image_outlined,
-                          size: 40,
-                          color: Colors.grey[400],
-                        ),
-                ),
-                // أزرار التعديل والحذف
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.8),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.edit, size: 18),
-                      onPressed: () => _editProduct(product, productId),
-                      color: primaryColor,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 30,
-                        minHeight: 30,
-                      ),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.8),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.delete, size: 18),
-                      onPressed: () => _deleteProduct(productId),
-                      color: Colors.red,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                        minWidth: 30,
-                        minHeight: 30,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // معلومات المنتج
-          Padding(
-            padding: const EdgeInsets.all(12.0),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalHeight = constraints.maxHeight;
+          final imageHeight = totalHeight * 0.4; // 40% للصورة
+          final contentHeight = totalHeight * 0.6; // 60% للمحتوى
+          
+          return SizedBox(
+            height: totalHeight,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  product['name'] ?? '',
-                  style: const TextStyle(
-                    fontFamily: 'Cairo',
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  product['category'] ?? '',
-                  style: TextStyle(
-                    fontFamily: 'Cairo',
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${product['price']?.toString() ?? '0'} دج',
-                      style: TextStyle(
-                        fontFamily: 'Cairo',
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: primaryColor,
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: backgroundColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'المخزون: ${product['stock']?.toString() ?? '0'}',
-                        style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 10,
-                          color: Colors.grey[700],
+                // صورة المنتج مع دعم Base64
+                SizedBox(
+                  height: imageHeight,
+                  width: double.infinity,
+                  child: ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                    child: Stack(
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          color: Colors.grey[200],
+                          child: _getProductImage(product),
                         ),
-                      ),
+                        // أزرار التعديل والحذف
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.8),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.edit,
+                                size: isVerySmallScreen ? 14 : 16,
+                              ),
+                              onPressed: () => _editProduct(product, productId),
+                              color: primaryColor,
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(
+                                minWidth: isVerySmallScreen ? 24 : 30,
+                                minHeight: isVerySmallScreen ? 24 : 30,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.8),
+                              shape: BoxShape.circle,
+                            ),
+                            child: IconButton(
+                              icon: Icon(
+                                Icons.delete,
+                                size: isVerySmallScreen ? 14 : 16,
+                              ),
+                              onPressed: () => _deleteProduct(productId),
+                              color: Colors.red,
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(
+                                minWidth: isVerySmallScreen ? 24 : 30,
+                                minHeight: isVerySmallScreen ? 24 : 30,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
+                ),
+
+                // معلومات المنتج
+                SizedBox(
+                  height: contentHeight,
+                  child: Padding(
+                    padding: EdgeInsets.all(isVerySmallScreen ? 8 : 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // اسم المنتج
+                        SizedBox(
+                          height: isVerySmallScreen ? 24 : 28,
+                          child: Text(
+                            product['name'] ?? '',
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontWeight: FontWeight.bold,
+                              fontSize: isVerySmallScreen ? 11 : 13,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        
+                        SizedBox(height: isVerySmallScreen ? 2 : 4),
+                        
+                        // الفئة
+                        SizedBox(
+                          height: isVerySmallScreen ? 14 : 16,
+                          child: Text(
+                            product['category'] ?? '',
+                            style: TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: isVerySmallScreen ? 9 : 11,
+                              color: Colors.grey[600],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        
+                        // مساحة مرنة
+                        const Spacer(),
+                        
+                        // السعر والمخزون
+                        SizedBox(
+                          height: isVerySmallScreen ? 32 : 36,
+                          child: Column(
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    '${product['price']?.toString() ?? '0'} د.ج',
+                                    style: TextStyle(
+                                      fontFamily: 'Cairo',
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: isVerySmallScreen ? 11 : 13,
+                                      color: primaryColor,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: isVerySmallScreen ? 4 : 6,
+                                      vertical: isVerySmallScreen ? 2 : 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: backgroundColor,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'المخزون: ${product['stock']?.toString() ?? '0'}',
+                                      style: TextStyle(
+                                        fontFamily: 'Cairo',
+                                        fontSize: isVerySmallScreen ? 8 : 9,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
+          );
+        },
+      ),
+    );
+  }
+
+  // الحصول على صورة المنتج من Base64
+  Widget _getProductImage(Map<String, dynamic> product) {
+    if (product['imageBase64'] != null) {
+      try {
+        Uint8List bytes = base64Decode(product['imageBase64']);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Icon(
+            Icons.image_not_supported,
+            size: 30,
+            color: Colors.grey[400],
           ),
-        ],
+        );
+      } catch (e) {
+        print('خطأ في تحويل Base64 إلى صورة: $e');
+        return Icon(
+          Icons.image_not_supported,
+          size: 30,
+          color: Colors.grey[400],
+        );
+      }
+    } else {
+      return Icon(
+        Icons.image_outlined,
+        size: 30,
+        color: Colors.grey[400],
+      );
+    }
+  }
+
+  // عرض رسائل النجاح
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  // عرض رسائل الخطأ
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }

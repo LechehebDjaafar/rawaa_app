@@ -3,28 +3,30 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class RegisterSellerScreen extends StatefulWidget {
-  const RegisterSellerScreen({super.key});
+class DeliveryRegisterScreen extends StatefulWidget {
+  const DeliveryRegisterScreen({super.key});
 
   @override
-  State<RegisterSellerScreen> createState() => _RegisterSellerScreenState();
+  State<DeliveryRegisterScreen> createState() => _DeliveryRegisterScreenState();
 }
 
-class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
+class _DeliveryRegisterScreenState extends State<DeliveryRegisterScreen> {
   final nameController = TextEditingController();
   final usernameController = TextEditingController();
   final addressController = TextEditingController();
-  final regNumberController = TextEditingController();
-  final serviceTypeController = TextEditingController();
   final phoneController = TextEditingController();
+  final nationalIdController = TextEditingController();
+  final licenseNumberController = TextEditingController();
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   bool obscure = true;
   bool isLoading = false;
   bool acceptTerms = false;
+  String _vehicleType = 'دراجة نارية'; // القيمة الافتراضية
   
   final Color primaryColor = const Color(0xFF1976D2);
   final Color secondaryColor = const Color(0xFF2F5233);
+  final Color deliveryColor = const Color(0xFFFF6B35); // برتقالي للتوصيل
   final Color backgroundColor = const Color(0xFFF5F7FA);
 
   // المفتاح الآن سيكون مرتبطًا بالنموذج الشامل
@@ -36,10 +38,10 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
     return Scaffold(
       backgroundColor: backgroundColor,
       appBar: AppBar(
-        backgroundColor: primaryColor,
+        backgroundColor: deliveryColor,
         elevation: 0,
         title: const Text(
-          'تسجيل حساب بائع',
+          'تسجيل حساب عامل توصيل',
           style: TextStyle(
             fontFamily: 'Cairo',
             fontWeight: FontWeight.bold,
@@ -54,7 +56,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ... (Progress indicator and step titles remain the same)
+            // مؤشر التقدم
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
@@ -65,7 +67,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
                         margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
                         height: 4,
                         decoration: BoxDecoration(
-                          color: i <= _currentStep ? primaryColor : Colors.grey[300],
+                          color: i <= _currentStep ? deliveryColor : Colors.grey[300],
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -78,15 +80,14 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('المعلومات الشخصية', style: TextStyle(color: _currentStep == 0 ? primaryColor : Colors.grey, fontWeight: _currentStep == 0 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
-                  Text('معلومات النشاط', style: TextStyle(color: _currentStep == 1 ? primaryColor : Colors.grey, fontWeight: _currentStep == 1 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
-                  Text('معلومات الحساب', style: TextStyle(color: _currentStep == 2 ? primaryColor : Colors.grey, fontWeight: _currentStep == 2 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
+                  Text('المعلومات الشخصية', style: TextStyle(color: _currentStep == 0 ? deliveryColor : Colors.grey, fontWeight: _currentStep == 0 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
+                  Text('معلومات المركبة', style: TextStyle(color: _currentStep == 1 ? deliveryColor : Colors.grey, fontWeight: _currentStep == 1 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
+                  Text('معلومات الحساب', style: TextStyle(color: _currentStep == 2 ? deliveryColor : Colors.grey, fontWeight: _currentStep == 2 ? FontWeight.bold : FontWeight.normal, fontSize: 12, fontFamily: 'Cairo')),
                 ],
               ),
             ),
             const SizedBox(height: 16),
             Expanded(
-              // 1. تم نقل Form ليصبح الحاوية الرئيسية للمحتوى
               child: Form(
                 key: _formKey,
                 child: SingleChildScrollView(
@@ -104,7 +105,6 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: isLoading ? null : () {
-                        // الآن هذا الشرط سيعمل في جميع الخطوات دون مشاكل
                         if (_formKey.currentState!.validate()) {
                           if (_currentStep < 2) {
                             setState(() {
@@ -112,7 +112,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
                             });
                           } else {
                             if (acceptTerms) {
-                              _registerSeller(); // تمت إعادة تفعيل إنشاء الحساب للاختبار
+                              _registerDelivery();
                             } else {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
@@ -127,7 +127,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
                         }
                       },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: primaryColor,
+                        backgroundColor: deliveryColor,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -150,8 +150,8 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
                           });
                         },
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: primaryColor,
-                          side: BorderSide(color: primaryColor),
+                          foregroundColor: deliveryColor,
+                          side: BorderSide(color: deliveryColor),
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
@@ -171,7 +171,6 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
   Widget _buildCurrentStepContent() {
     switch (_currentStep) {
       case 0:
-        // 2. تم إزالة Form من هنا لأنه أصبح في الأعلى
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -180,8 +179,8 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
             _buildTextField(
               controller: nameController,
               icon: Icons.person,
-              label: 'الاسم واللقب',
-              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال الاسم واللقب' : null,
+              label: 'الاسم الكامل',
+              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال الاسم الكامل' : null,
             ),
             const SizedBox(height: 16),
             _buildTextField(
@@ -197,27 +196,6 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
               label: 'العنوان الكامل',
               validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال العنوان' : null,
             ),
-          ],
-        );
-      case 1:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('أدخل معلومات نشاطك التجاري', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: secondaryColor, fontFamily: 'Cairo')),
-            const SizedBox(height: 20),
-            _buildTextField(
-              controller: regNumberController,
-              icon: Icons.badge,
-              label: 'رقم تسجيل تجاري/بطاقة حرفي',
-              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال رقم التسجيل' : null,
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              controller: serviceTypeController,
-              icon: Icons.build,
-              label: 'نوع الخدمة',
-              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال نوع الخدمة' : null,
-            ),
             const SizedBox(height: 16),
             _buildTextField(
               controller: phoneController,
@@ -225,6 +203,60 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
               label: 'رقم الهاتف',
               keyboardType: TextInputType.phone,
               validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال رقم الهاتف' : null,
+            ),
+          ],
+        );
+      case 1:
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('أدخل معلومات المركبة والترخيص', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: secondaryColor, fontFamily: 'Cairo')),
+            const SizedBox(height: 20),
+            _buildTextField(
+              controller: nationalIdController,
+              icon: Icons.badge,
+              label: 'رقم الهوية الوطنية',
+              keyboardType: TextInputType.number,
+              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال رقم الهوية' : null,
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: licenseNumberController,
+              icon: Icons.credit_card,
+              label: 'رقم رخصة القيادة',
+              validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال رقم رخصة القيادة' : null,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              value: _vehicleType,
+              decoration: InputDecoration(
+                labelText: 'نوع المركبة',
+                labelStyle: TextStyle(fontFamily: 'Cairo', color: Colors.grey[700]),
+                prefixIcon: Icon(Icons.two_wheeler, color: deliveryColor),
+                filled: true,
+                fillColor: Colors.white,
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: BorderSide(color: deliveryColor, width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              items: ['دراجة نارية', 'سيارة', 'دراجة هوائية', 'مشي على الأقدام']
+                  .map((label) => DropdownMenuItem(
+                        value: label,
+                        child: Text(label, style: const TextStyle(fontFamily: 'Cairo')),
+                      ))
+                  .toList(),
+              onChanged: (value) {
+                setState(() {
+                  _vehicleType = value!;
+                });
+              },
+              validator: (value) => value == null || value.isEmpty ? 'الرجاء اختيار نوع المركبة' : null,
             ),
           ],
         );
@@ -252,7 +284,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
               label: 'كلمة المرور',
               obscureText: obscure,
               suffixIcon: IconButton(
-                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off, color: primaryColor),
+                icon: Icon(obscure ? Icons.visibility : Icons.visibility_off, color: deliveryColor),
                 onPressed: () => setState(() => obscure = !obscure),
               ),
               validator: (value) {
@@ -266,7 +298,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
               value: acceptTerms,
               onChanged: (value) => setState(() => acceptTerms = value ?? false),
               title: Text('أوافق على شروط الاستخدام وسياسة الخصوصية', style: TextStyle(fontSize: 14, color: Colors.grey[700], fontFamily: 'Cairo')),
-              activeColor: primaryColor,
+              activeColor: deliveryColor,
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
               dense: true,
@@ -278,9 +310,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
     }
   }
 
-  // _buildTextField and _registerSeller methods remain the same
-  // ...
-    Widget _buildTextField({
+  Widget _buildTextField({
     required TextEditingController controller,
     required IconData icon,
     required String label,
@@ -298,7 +328,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
       decoration: InputDecoration(
         labelText: label,
         labelStyle: TextStyle(fontFamily: 'Cairo', color: Colors.grey[700]),
-        prefixIcon: Icon(icon, color: primaryColor),
+        prefixIcon: Icon(icon, color: deliveryColor),
         suffixIcon: suffixIcon,
         filled: true,
         fillColor: Colors.white,
@@ -308,7 +338,7 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: primaryColor, width: 1.5),
+          borderSide: BorderSide(color: deliveryColor, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
@@ -323,36 +353,43 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
     );
   }
 
-  Future<void> _registerSeller() async {
+  Future<void> _registerDelivery() async {
     setState(() => isLoading = true);
     
     try {
+      // إنشاء حساب في Firebase Auth
       final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: emailController.text.trim(),
         password: passwordController.text.trim(),
       );
 
+      // حفظ بيانات عامل التوصيل في Firestore
       await FirebaseFirestore.instance.collection('users').doc(credential.user!.uid).set({
         'name': nameController.text.trim(),
         'username': usernameController.text.trim(),
         'address': addressController.text.trim(),
-        'regNumber': regNumberController.text.trim(),
-        'serviceType': serviceTypeController.text.trim(),
         'phone': phoneController.text.trim(),
+        'nationalId': nationalIdController.text.trim(),
+        'licenseNumber': licenseNumberController.text.trim(),
+        'vehicleType': _vehicleType,
         'email': emailController.text.trim(),
-        'role': 'seller',
+        'role': 'delivery',
+        'isActive': true, // حالة عامل التوصيل (نشط/غير نشط)
+        'rating': 5.0, // تقييم افتراضي
+        'totalDeliveries': 0, // عدد التوصيلات المكتملة
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      // حفظ حالة تسجيل الدخول
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('is_logged_in', true);
-      await prefs.setString('user_type', 'seller');
+      await prefs.setString('user_type', 'delivery');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('تم تسجيل الحساب بنجاح!'),
-            backgroundColor: secondaryColor,
+            content: const Text('تم تسجيل حساب عامل التوصيل بنجاح!'),
+            backgroundColor: deliveryColor,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
@@ -360,7 +397,8 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
           ),
         );
         
-        Navigator.pushReplacementNamed(context, '/seller_dashboard');
+        // التوجيه إلى لوحة تحكم عامل التوصيل
+        Navigator.pushReplacementNamed(context, '/delivery_main');
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage;
@@ -371,17 +409,51 @@ class _RegisterSellerScreenState extends State<RegisterSellerScreen> {
         case 'weak-password':
           errorMessage = 'كلمة المرور ضعيفة جدًا';
           break;
+        case 'invalid-email':
+          errorMessage = 'البريد الإلكتروني غير صحيح';
+          break;
         default:
           errorMessage = e.message ?? 'حدث خطأ أثناء التسجيل';
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMessage), backgroundColor: Colors.red.shade700, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('حدث خطأ: $e'), backgroundColor: Colors.red.shade700, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => isLoading = false);
       }
     }
   }
-}
 
+  @override
+  void dispose() {
+    nameController.dispose();
+    usernameController.dispose();
+    addressController.dispose();
+    phoneController.dispose();
+    nationalIdController.dispose();
+    licenseNumberController.dispose();
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
+}

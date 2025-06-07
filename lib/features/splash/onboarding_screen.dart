@@ -5,7 +5,7 @@ class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({Key? key}) : super(key: key);
 
   @override
-  State createState() => _OnboardingScreenState();
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
@@ -70,195 +70,248 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // صفحات الترحيب
-          PageView.builder(
-            controller: _pageController,
-            onPageChanged: (int page) {
-              setState(() {
-                _currentPage = page;
-              });
-            },
-            itemCount: _onboardingData.length,
-            itemBuilder: (context, index) {
-              return Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      _onboardingData[index]['color1'],
-                      _onboardingData[index]['color2'],
-                    ],
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // شعار اللوغو الخاص بك في الأعلى
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 60),
-                      child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5),
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          // الحصول على معلومات الشاشة
+          final screenHeight = constraints.maxHeight;
+          final screenWidth = constraints.maxWidth;
+          final isSmallScreen = screenHeight < 600;
+          final isVerySmallScreen = screenHeight < 500;
+          
+          return Stack(
+            children: [
+              // صفحات الترحيب
+              PageView.builder(
+                controller: _pageController,
+                onPageChanged: (int page) {
+                  setState(() {
+                    _currentPage = page;
+                  });
+                },
+                itemCount: _onboardingData.length,
+                itemBuilder: (context, index) {
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          _onboardingData[index]['color1'],
+                          _onboardingData[index]['color2'],
+                        ],
+                      ),
+                    ),
+                    child: SafeArea(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.05,
+                          vertical: isVerySmallScreen ? 10 : 20,
+                        ),
+                        child: Column(
+                          children: [
+                            // مساحة علوية مرنة
+                            Flexible(
+                              flex: isSmallScreen ? 1 : 2,
+                              child: Container(),
+                            ),
+                            
+                            // شعار اللوغو
+                            Container(
+                              width: isVerySmallScreen ? 80 : (isSmallScreen ? 100 : 120),
+                              height: isVerySmallScreen ? 80 : (isSmallScreen ? 100 : 120),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Image.asset(
+                                  'assets/images/logo.png',
+                                  width: isVerySmallScreen ? 50 : (isSmallScreen ? 65 : 80),
+                                  height: isVerySmallScreen ? 50 : (isSmallScreen ? 65 : 80),
+                                  errorBuilder: (context, error, stackTrace) => Icon(
+                                    Icons.water_drop_rounded,
+                                    size: isVerySmallScreen ? 40 : (isSmallScreen ? 50 : 60),
+                                    color: _onboardingData[index]['color1'],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            
+                            SizedBox(height: isVerySmallScreen ? 20 : (isSmallScreen ? 30 : 40)),
+                            
+                            // أيقونة الصفحة
+                            Container(
+                              width: isVerySmallScreen ? 100 : (isSmallScreen ? 120 : 150),
+                              height: isVerySmallScreen ? 100 : (isSmallScreen ? 120 : 150),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                _onboardingData[index]['icon'],
+                                size: isVerySmallScreen ? 50 : (isSmallScreen ? 60 : 80),
+                                color: Colors.white,
+                              ),
+                            ),
+                            
+                            SizedBox(height: isVerySmallScreen ? 20 : (isSmallScreen ? 30 : 40)),
+                            
+                            // عنوان الترحيب
+                            Flexible(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    _onboardingData[index]['title'],
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: isVerySmallScreen ? 20 : (isSmallScreen ? 24 : 28),
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Cairo',
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            
+                            SizedBox(height: isVerySmallScreen ? 10 : 16),
+                            
+                            // وصف الترحيب
+                            Flexible(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.08),
+                                child: Text(
+                                  _onboardingData[index]['description'],
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: isVerySmallScreen ? 12 : (isSmallScreen ? 14 : 16),
+                                    fontFamily: 'Cairo',
+                                  ),
+                                  textAlign: TextAlign.center,
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            
+                            // مساحة سفلية مرنة
+                            Flexible(
+                              flex: isSmallScreen ? 1 : 2,
+                              child: Container(),
                             ),
                           ],
                         ),
-                        child: Center(
-                          child: Image.asset(
-                            'assets/images/logo.png',
-                            width: 80,
-                            height: 80,
-                            // إذا لم يتم العثور على الصورة، عرض أيقونة بديلة
-                            errorBuilder: (context, error, stackTrace) => Icon(
-                              Icons.water_drop_rounded,
-                              size: 60,
-                              color: _onboardingData[index]['color1'],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              
+              // زر تخطي في الأعلى
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 10,
+                right: 20,
+                child: _currentPage != _numPages - 1
+                    ? SafeArea(
+                        child: TextButton(
+                          onPressed: () async {
+                            await _markOnboardingComplete();
+                            if (mounted) {
+                              Navigator.pushReplacementNamed(context, '/login');
+                            }
+                          },
+                          child: Text(
+                            'تخطي',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: isVerySmallScreen ? 14 : 16,
+                              fontFamily: 'Cairo',
                             ),
                           ),
                         ),
-                      ),
+                      )
+                    : const SizedBox(),
+              ),
+              
+              // مؤشرات الصفحات والأزرار في الأسفل
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: SafeArea(
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth * 0.05,
+                      vertical: isVerySmallScreen ? 15 : 20,
                     ),
-                    
-                    // أيقونة بدلاً من الصورة
-                    Container(
-                      width: 150,
-                      height: 150,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        _onboardingData[index]['icon'],
-                        size: 80,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    
-                    // عنوان الترحيب
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Text(
-                        _onboardingData[index]['title'],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Cairo',
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // مؤشرات الصفحات
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: _buildPageIndicator(),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    
-                    // وصف الترحيب
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 40),
-                      child: Text(
-                        _onboardingData[index]['description'],
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontFamily: 'Cairo',
+                        
+                        SizedBox(height: isVerySmallScreen ? 20 : 30),
+                        
+                        // زر التالي/ابدأ الآن
+                        SizedBox(
+                          width: double.infinity,
+                          height: isVerySmallScreen ? 45 : 50,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              if (_currentPage == _numPages - 1) {
+                                await _markOnboardingComplete();
+                                if (mounted) {
+                                  Navigator.pushReplacementNamed(context, '/login');
+                                }
+                              } else {
+                                _pageController.nextPage(
+                                  duration: const Duration(milliseconds: 500),
+                                  curve: Curves.ease,
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: _onboardingData[_currentPage]['color1'],
+                              elevation: 5,
+                              shadowColor: Colors.black.withOpacity(0.3),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(25),
+                              ),
+                            ),
+                            child: FittedBox(
+                              child: Text(
+                                _currentPage == _numPages - 1 ? 'ابدأ الآن' : 'التالي',
+                                style: TextStyle(
+                                  fontSize: isVerySmallScreen ? 16 : 18,
+                                  fontWeight: FontWeight.bold,
+                                  fontFamily: 'Cairo',
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-          
-          // زر تخطي في الأعلى
-          Positioned(
-            top: 50,
-            right: 20,
-            child: _currentPage != _numPages - 1
-                ? TextButton(
-                    onPressed: () async {
-                      await _markOnboardingComplete();
-                      if (mounted) {
-                        Navigator.pushReplacementNamed(context, '/login');
-                      }
-                    },
-                    child: const Text(
-                      'تخطي',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontFamily: 'Cairo',
-                      ),
-                    ),
-                  )
-                : const SizedBox(),
-          ),
-          
-          // مؤشرات الصفحات والأزرار في الأسفل
-          Positioned(
-            bottom: 80,
-            left: 0,
-            right: 0,
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: _buildPageIndicator(),
-                ),
-                const SizedBox(height: 40),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        if (_currentPage == _numPages - 1) {
-                          await _markOnboardingComplete();
-                          if (mounted) {
-                            Navigator.pushReplacementNamed(context, '/login');
-                          }
-                        } else {
-                          _pageController.nextPage(
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.ease,
-                          );
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: _onboardingData[_currentPage]['color1'],
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        elevation: 5,
-                        shadowColor: Colors.black.withOpacity(0.3),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                      ),
-                      child: Text(
-                        _currentPage == _numPages - 1 ? 'ابدأ الآن' : 'التالي',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Cairo',
-                        ),
-                      ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

@@ -4,29 +4,26 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:convert';
-import 'dart:typed_data';
-import 'package:flutter/services.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
-class ProfileTab extends StatefulWidget {
-  const ProfileTab({super.key});
+class AdminProfileTab extends StatefulWidget {
+  const AdminProfileTab({super.key});
 
   @override
-  State<ProfileTab> createState() => _ProfileTabState();
+  State<AdminProfileTab> createState() => _AdminProfileTabState();
 }
 
-class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateMixin {
+class _AdminProfileTabState extends State<AdminProfileTab> with SingleTickerProviderStateMixin {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
   
   bool _isEditing = false;
   bool _isLoading = false;
   File? _imageFile;
-  String? _base64Image;
   
   // متحكمات الإدخال
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
   
@@ -35,6 +32,7 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
   final Color secondaryColor = const Color(0xFF2F5233);
   final Color accentColor = const Color(0xFF4ECDC4);
   final Color backgroundColor = const Color(0xFFF5F7FA);
+  final Color alertColor = const Color(0xFFFF8A65);
   
   // متغيرات للأنيميشن
   late AnimationController _animationController;
@@ -62,138 +60,49 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
   @override
   void dispose() {
     _nameController.dispose();
-    _usernameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     _animationController.dispose();
     super.dispose();
   }
 
-  // اختيار صورة من المعرض وتحويلها إلى Base64 - مصحح
+  // اختيار صورة من المعرض
   Future<void> _pickImage() async {
-    try {
-      // عرض خيارات اختيار الصورة
-      await _showImageSourceDialog();
-    } catch (e) {
-      _showErrorSnackBar('فشل في اختيار الصورة: $e');
+    final ImagePicker picker = ImagePicker();
+    final XFile? pickedImage = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (pickedImage != null) {
+      setState(() {
+        _imageFile = File(pickedImage.path);
+      });
     }
   }
 
-  // عرض نافذة اختيار مصدر الصورة
-  Future<void> _showImageSourceDialog() async {
-    return showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text(
-            'اختيار الصورة',
-            style: TextStyle(fontFamily: 'Cairo'),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_library, color: Colors.blue),
-                title: const Text('من المعرض', style: TextStyle(fontFamily: 'Cairo')),
-                onTap: () {
-                  Navigator.pop(context);
-                  _getImageFromSource(ImageSource.gallery);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Colors.green),
-                title: const Text('من الكاميرا', style: TextStyle(fontFamily: 'Cairo')),
-                onTap: () {
-                  Navigator.pop(context);
-                  _getImageFromSource(ImageSource.camera);
-                },
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // الحصول على الصورة من المصدر المحدد
-  Future<void> _getImageFromSource(ImageSource source) async {
-    try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? pickedImage = await picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 70,
-      );
-      
-      if (pickedImage != null) {
-        // التحقق من وجود الملف
-        final File imageFile = File(pickedImage.path);
-        if (await imageFile.exists()) {
-          setState(() {
-            _imageFile = imageFile;
-          });
-          
-          // تحويل الصورة إلى Base64
-          await _convertImageToBase64();
-        } else {
-          _showErrorSnackBar('لم يتم العثور على الصورة المحددة');
-        }
-      } else {
-        _showErrorSnackBar('لم يتم اختيار أي صورة');
-      }
-    } catch (e) {
-      _showErrorSnackBar('خطأ في اختيار الصورة: $e');
-    }
-  }
-
-  // تحويل الصورة إلى Base64 - مصحح
-  Future<void> _convertImageToBase64() async {
-    if (_imageFile == null) return;
+  // رفع الصورة إلى Firebase Storage
+  Future<String?> _uploadImage(String userId) async {
+    if (_imageFile == null) return null;
     
     try {
-      // التحقق من وجود الملف
-      if (!await _imageFile!.exists()) {
-        _showErrorSnackBar('الملف غير موجود');
-        return;
-      }
-
-      // قراءة الصورة كـ bytes
-      Uint8List imageBytes = await _imageFile!.readAsBytes();
+      final String fileName = 'admin_profile_${userId}_${DateTime.now().millisecondsSinceEpoch}';
+      final Reference storageRef = _storage.ref().child('admin_images/$fileName');
       
-      // التحقق من حجم الصورة (الحد الأقصى 1MB)
-      if (imageBytes.length > 1024 * 1024) {
-        _showErrorSnackBar('حجم الصورة كبير جداً. يرجى اختيار صورة أصغر من 1MB');
-        setState(() {
-          _imageFile = null;
-        });
-        return;
-      }
+      final UploadTask uploadTask = storageRef.putFile(_imageFile!);
+      final TaskSnapshot snapshot = await uploadTask;
       
-      // تحويل إلى Base64
-      String base64String = base64Encode(imageBytes);
-      
-      setState(() {
-        _base64Image = base64String;
-      });
-      
-      _showSuccessSnackBar('تم تحضير الصورة بنجاح');
+      return await snapshot.ref.getDownloadURL();
     } catch (e) {
-      _showErrorSnackBar('فشل في معالجة الصورة: $e');
-      setState(() {
-        _imageFile = null;
-        _base64Image = null;
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('فشل رفع الصورة: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return null;
     }
   }
 
-  // حفظ التغييرات مع الصورة المحولة إلى Base64
+  // حفظ التغييرات
   Future<void> _saveChanges(Map<String, dynamic> userData) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -203,37 +112,44 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
     });
     
     try {
-      // تحضير البيانات للحفظ
-      Map<String, dynamic> updateData = {
-        'name': _nameController.text.trim(),
-        'username': _usernameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'address': _addressController.text.trim(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
+      String? profileImageUrl = userData['profileImage'];
       
-      // إضافة الصورة المحولة إلى Base64 إذا تم اختيار صورة جديدة
-      if (_base64Image != null) {
-        updateData['profileImageBase64'] = _base64Image;
-        updateData['hasProfileImage'] = true;
+      if (_imageFile != null) {
+        profileImageUrl = await _uploadImage(user.uid);
       }
       
-      // تحديث بيانات المستخدم في Firestore
-      await _firestore.collection('users').doc(user.uid).update(updateData);
+      await _firestore.collection('users').doc(user.uid).update({
+        'name': _nameController.text,
+        'phone': _phoneController.text,
+        'address': _addressController.text,
+        'profileImage': profileImageUrl,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       
       setState(() {
         _isEditing = false;
         _isLoading = false;
-        _imageFile = null;
-        _base64Image = null;
       });
       
-      _showSuccessSnackBar('تم تحديث البيانات بنجاح');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم تحديث البيانات بنجاح'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       setState(() {
         _isLoading = false;
       });
-      _showErrorSnackBar('حدث خطأ: $e');
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('حدث خطأ: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -262,36 +178,18 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                   Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                 }
               } catch (e) {
-                _showErrorSnackBar('حدث خطأ أثناء تسجيل الخروج: $e');
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('حدث خطأ أثناء تسجيل الخروج: $e'),
+                    backgroundColor: Colors.red,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               }
             },
             child: const Text('تسجيل الخروج', style: TextStyle(fontFamily: 'Cairo')),
           ),
         ],
-      ),
-    );
-  }
-
-  // عرض رسائل النجاح
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  // عرض رسائل الخطأ
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -314,7 +212,9 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(
-                  child: CircularProgressIndicator(color: primaryColor),
+                  child: CircularProgressIndicator(
+                    color: primaryColor,
+                  ),
                 );
               }
               
@@ -322,17 +222,18 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                 return const Center(
                   child: Text(
                     'لا توجد بيانات للمستخدم',
-                    style: TextStyle(fontFamily: 'Cairo', fontSize: 16),
+                    style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 16,
+                    ),
                   ),
                 );
               }
               
               final userData = snapshot.data!.data() as Map<String, dynamic>;
               
-              // تعبئة المتحكمات بالبيانات الحالية عند بدء التعديل
               if (_isEditing && _nameController.text.isEmpty) {
                 _nameController.text = userData['name'] ?? '';
-                _usernameController.text = userData['username'] ?? '';
                 _phoneController.text = userData['phone'] ?? '';
                 _addressController.text = userData['address'] ?? '';
               }
@@ -350,7 +251,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
     );
   }
 
-  // بناء صفحة عرض الملف الشخصي
   Widget _buildProfileView(Map<String, dynamic> userData, bool isVerySmallScreen, double screenWidth) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
@@ -362,7 +262,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // الصورة الخلفية
               Container(
                 height: isVerySmallScreen ? 120 : 150,
                 width: double.infinity,
@@ -374,9 +273,15 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                   ),
                   borderRadius: BorderRadius.circular(16),
                 ),
+                child: Center(
+                  child: Icon(
+                    Icons.admin_panel_settings,
+                    size: isVerySmallScreen ? 40 : 60,
+                    color: Colors.white.withOpacity(0.3),
+                  ),
+                ),
               ),
               
-              // الصورة الشخصية
               Positioned(
                 bottom: isVerySmallScreen ? -30 : -40,
                 child: CircleAvatar(
@@ -384,11 +289,13 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                   backgroundColor: Colors.white,
                   child: CircleAvatar(
                     radius: isVerySmallScreen ? 32 : 42,
-                    backgroundColor: Colors.green.shade100,
-                    backgroundImage: _getProfileImage(userData),
-                    child: _getProfileImage(userData) == null
+                    backgroundColor: accentColor.withOpacity(0.2),
+                    backgroundImage: userData['profileImage'] != null
+                        ? NetworkImage(userData['profileImage'])
+                        : null,
+                    child: userData['profileImage'] == null
                         ? Icon(
-                            Icons.person,
+                            Icons.admin_panel_settings,
                             size: isVerySmallScreen ? 32 : 40,
                             color: secondaryColor,
                           )
@@ -397,7 +304,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                 ),
               ),
               
-              // زر التعديل
               Positioned(
                 top: 16,
                 right: 16,
@@ -423,9 +329,8 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
           
           SizedBox(height: isVerySmallScreen ? 40 : 50),
           
-          // اسم المستخدم
           Text(
-            userData['name'] ?? '',
+            userData['name'] ?? 'مدير النظام',
             style: TextStyle(
               fontSize: isVerySmallScreen ? 18 : 22,
               fontWeight: FontWeight.bold,
@@ -433,22 +338,33 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
             ),
           ),
           
-          // اسم المستخدم
-          Text(
-            '@${userData['username'] ?? ''}',
-            style: TextStyle(
-              fontSize: isVerySmallScreen ? 14 : 16,
-              color: Colors.grey,
-              fontFamily: 'Cairo',
+          const SizedBox(height: 4),
+          
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: primaryColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'مدير النظام',
+              style: TextStyle(
+                fontSize: isVerySmallScreen ? 12 : 14,
+                color: Colors.white,
+                fontFamily: 'Cairo',
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
           
-          SizedBox(height: isVerySmallScreen ? 16 : 20),
+          SizedBox(height: isVerySmallScreen ? 20 : 24),
           
           // معلومات الاتصال
           Card(
             margin: const EdgeInsets.symmetric(vertical: 8),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             elevation: 2,
             child: Padding(
               padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
@@ -481,6 +397,57 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
           
           SizedBox(height: isVerySmallScreen ? 20 : 24),
           
+          // إحصائيات سريعة
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            elevation: 2,
+            child: Padding(
+              padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'إحصائيات سريعة',
+                    style: TextStyle(
+                      fontSize: isVerySmallScreen ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Cairo',
+                      color: secondaryColor,
+                    ),
+                  ),
+                  SizedBox(height: isVerySmallScreen ? 12 : 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildStatCard(
+                          'المستخدمون',
+                          Icons.people,
+                          primaryColor,
+                          'users',
+                          isVerySmallScreen,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildStatCard(
+                          'المنتجات',
+                          Icons.inventory,
+                          secondaryColor,
+                          'products',
+                          isVerySmallScreen,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          
+          SizedBox(height: isVerySmallScreen ? 20 : 24),
+          
           // زر تسجيل الخروج
           SizedBox(
             width: double.infinity,
@@ -492,6 +459,7 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                 style: TextStyle(
                   fontSize: isVerySmallScreen ? 16 : 18,
                   fontFamily: 'Cairo',
+                  fontWeight: FontWeight.bold,
                 ),
               ),
               style: ElevatedButton.styleFrom(
@@ -509,7 +477,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
     );
   }
 
-  // بناء نموذج تعديل الملف الشخصي - مصحح
   Widget _buildEditProfileForm(Map<String, dynamic> userData, bool isVerySmallScreen, double screenWidth) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
@@ -518,7 +485,7 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
         children: [
           SizedBox(height: isVerySmallScreen ? 10 : 16),
           
-          // صورة المستخدم مع زر الكاميرا المصحح
+          // صورة المستخدم
           Stack(
             alignment: Alignment.bottomRight,
             children: [
@@ -527,32 +494,31 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                 backgroundColor: Colors.white,
                 child: CircleAvatar(
                   radius: isVerySmallScreen ? 46 : 56,
-                  backgroundColor: Colors.green.shade100,
-                  backgroundImage: _getEditProfileImage(userData),
-                  child: _getEditProfileImage(userData) == null
+                  backgroundColor: accentColor.withOpacity(0.2),
+                  backgroundImage: _imageFile != null
+                      ? FileImage(_imageFile!) as ImageProvider
+                      : (userData['profileImage'] != null
+                          ? NetworkImage(userData['profileImage'])
+                          : null),
+                  child: (_imageFile == null && userData['profileImage'] == null)
                       ? Icon(
-                          Icons.person,
+                          Icons.admin_panel_settings,
                           size: isVerySmallScreen ? 40 : 50,
                           color: secondaryColor,
                         )
                       : null,
                 ),
               ),
-              // زر الكاميرا المصحح
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: GestureDetector(
-                  onTap: _pickImage, // استدعاء الدالة المصححة
-                  child: CircleAvatar(
-                    backgroundColor: primaryColor,
-                    radius: isVerySmallScreen ? 16 : 20,
-                    child: Icon(
-                      Icons.camera_alt,
-                      color: Colors.white,
-                      size: isVerySmallScreen ? 16 : 20,
-                    ),
+              CircleAvatar(
+                backgroundColor: primaryColor,
+                radius: isVerySmallScreen ? 16 : 20,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.camera_alt,
+                    color: Colors.white,
+                    size: isVerySmallScreen ? 16 : 20,
                   ),
+                  onPressed: _pickImage,
                 ),
               ),
             ],
@@ -563,16 +529,8 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
           // حقول التعديل
           _buildTextField(
             controller: _nameController,
-            label: 'الاسم واللقب',
+            label: 'الاسم الكامل',
             icon: Icons.person,
-            isVerySmallScreen: isVerySmallScreen,
-          ),
-          SizedBox(height: isVerySmallScreen ? 12 : 16),
-          
-          _buildTextField(
-            controller: _usernameController,
-            label: 'اسم المستخدم',
-            icon: Icons.account_circle,
             isVerySmallScreen: isVerySmallScreen,
           ),
           SizedBox(height: isVerySmallScreen ? 12 : 16),
@@ -604,7 +562,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
                     setState(() {
                       _isEditing = false;
                       _imageFile = null;
-                      _base64Image = null;
                     });
                   },
                   style: OutlinedButton.styleFrom(
@@ -661,37 +618,6 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
     );
   }
 
-  // الحصول على صورة الملف الشخصي من Base64
-  ImageProvider? _getProfileImage(Map<String, dynamic> userData) {
-    if (userData['profileImageBase64'] != null) {
-      try {
-        Uint8List bytes = base64Decode(userData['profileImageBase64']);
-        return MemoryImage(bytes);
-      } catch (e) {
-        print('خطأ في تحويل Base64 إلى صورة: $e');
-        return null;
-      }
-    }
-    return null;
-  }
-
-  // الحصول على صورة الملف الشخصي أثناء التعديل
-  ImageProvider? _getEditProfileImage(Map<String, dynamic> userData) {
-    if (_imageFile != null) {
-      return FileImage(_imageFile!);
-    } else if (userData['profileImageBase64'] != null) {
-      try {
-        Uint8List bytes = base64Decode(userData['profileImageBase64']);
-        return MemoryImage(bytes);
-      } catch (e) {
-        print('خطأ في تحويل Base64 إلى صورة: $e');
-        return null;
-      }
-    }
-    return null;
-  }
-
-  // بناء حقل إدخال
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -760,6 +686,47 @@ class _ProfileTabState extends State<ProfileTab> with SingleTickerProviderStateM
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatCard(String title, IconData icon, Color color, String collection, bool isVerySmallScreen) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection(collection).snapshots(),
+      builder: (context, snapshot) {
+        final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+        
+        return Container(
+          padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Column(
+            children: [
+              Icon(icon, color: color, size: isVerySmallScreen ? 24 : 28),
+              SizedBox(height: isVerySmallScreen ? 4 : 8),
+              Text(
+                count.toString(),
+                style: TextStyle(
+                  fontSize: isVerySmallScreen ? 18 : 20,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                  fontFamily: 'Cairo',
+                ),
+              ),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: isVerySmallScreen ? 10 : 12,
+                  color: color,
+                  fontFamily: 'Cairo',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

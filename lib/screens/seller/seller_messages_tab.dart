@@ -18,7 +18,7 @@ class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTicker
   
   // ألوان التطبيق
   final Color primaryColor = const Color(0xFF1976D2); // أزرق مائي
-  final Color secondaryColor = const Color(0xFF2F5233); // أخضر داكن
+  final Color secondaryColor =  const Color.fromARGB(255, 78, 94, 243); // أخضر داكن
   final Color accentColor = const Color(0xFF64B5F6); // أزرق فاتح
   final Color backgroundColor = const Color(0xFFF5F7FA); // رمادي فاتح
   
