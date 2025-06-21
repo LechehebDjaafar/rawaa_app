@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 
 class SellerProfileTab extends StatefulWidget {
   const SellerProfileTab({super.key});
@@ -20,20 +21,25 @@ class _ProfileTabState extends State<SellerProfileTab>
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  // إضافة التحقق من معرف البائع الحالي
+  String? get _currentUserId => _auth.currentUser?.uid;
+
   bool _isEditing = false;
   bool _isLoading = false;
   File? _imageFile;
-  String? _base64Image; // لحفظ الصورة كـ Base64
+  String? _base64Image;
 
   // متحكمات الإدخال
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
+  final TextEditingController _businessNameController = TextEditingController(); // إضافة اسم المتجر
+  final TextEditingController _businessDescriptionController = TextEditingController(); // إضافة وصف المتجر
 
   // ألوان التطبيق
   final Color primaryColor = const Color(0xFF1976D2);
-  final Color secondaryColor =  const Color.fromARGB(255, 78, 94, 243);
+  final Color secondaryColor = const Color.fromARGB(255, 78, 94, 243);
   final Color accentColor = const Color(0xFF4ECDC4);
   final Color backgroundColor = const Color(0xFFF5F7FA);
 
@@ -58,6 +64,35 @@ class _ProfileTabState extends State<SellerProfileTab>
     );
 
     _animationController.forward();
+    _ensureUserProfileExists();
+  }
+
+  // التأكد من وجود ملف المستخدم وإنشاؤه إذا لم يكن موجوداً
+  Future<void> _ensureUserProfileExists() async {
+    if (_currentUserId == null) return;
+
+    try {
+      final userDoc = await _firestore.collection('users').doc(_currentUserId!).get();
+      
+      if (!userDoc.exists) {
+        // إنشاء ملف المستخدم إذا لم يكن موجوداً
+        await _firestore.collection('users').doc(_currentUserId!).set({
+          'email': _auth.currentUser?.email ?? '',
+          'name': _auth.currentUser?.displayName ?? 'بائع جديد',
+          'username': 'seller_${_currentUserId!.substring(0, 6)}',
+          'phone': '',
+          'address': '',
+          'businessName': 'متجر الري والهيدروليك',
+          'businessDescription': 'متخصصون في أنظمة الري ومعدات الهيدروليك',
+          'userType': 'seller',
+          'isActive': true,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (e) {
+      print('خطأ في التحقق من ملف المستخدم: $e');
+    }
   }
 
   @override
@@ -66,46 +101,46 @@ class _ProfileTabState extends State<SellerProfileTab>
     _usernameController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
+    _businessNameController.dispose();
+    _businessDescriptionController.dispose();
     _animationController.dispose();
     super.dispose();
   }
 
-  // اختيار صورة من المعرض وتحويلها إلى Base64 - مصحح بالطريقة الصحيحة
+  // اختيار صورة من المعرض وتحويلها إلى Base64 - محسن
   Future<void> _pickImage() async {
     try {
-      // عرض خيارات اختيار الصورة
       await _showImageSourceDialog();
     } catch (e) {
       _showErrorSnackBar('فشل في اختيار الصورة: $e');
     }
   }
 
-  // عرض نافذة اختيار مصدر الصورة
+  // عرض نافذة اختيار مصدر الصورة - محسن
   Future<void> _showImageSourceDialog() async {
     return showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text(
             'اختيار الصورة',
-            style: TextStyle(fontFamily: 'Cairo'),
+            style: TextStyle(fontFamily: 'Cairo', fontWeight: FontWeight.bold),
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library, color: Colors.blue),
-                title: const Text('من المعرض',
-                    style: TextStyle(fontFamily: 'Cairo')),
+                leading: Icon(Icons.photo_library, color: primaryColor),
+                title: const Text('من المعرض', style: TextStyle(fontFamily: 'Cairo')),
                 onTap: () {
                   Navigator.pop(context);
                   _getImageFromSource(ImageSource.gallery);
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.camera_alt, color: Colors.green),
-                title: const Text('من الكاميرا',
-                    style: TextStyle(fontFamily: 'Cairo')),
+                leading: Icon(Icons.camera_alt, color: secondaryColor),
+                title: const Text('من الكاميرا', style: TextStyle(fontFamily: 'Cairo')),
                 onTap: () {
                   Navigator.pop(context);
                   _getImageFromSource(ImageSource.camera);
@@ -116,7 +151,10 @@ class _ProfileTabState extends State<SellerProfileTab>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+              child: Text(
+                'إلغاء',
+                style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600]),
+              ),
             ),
           ],
         );
@@ -124,7 +162,7 @@ class _ProfileTabState extends State<SellerProfileTab>
     );
   }
 
-  // الحصول على الصورة من المصدر المحدد - مصحح بالطريقة الصحيحة
+  // الحصول على الصورة من المصدر المحدد - محسن
   Future<void> _getImageFromSource(ImageSource source) async {
     try {
       final ImagePicker picker = ImagePicker();
@@ -136,59 +174,64 @@ class _ProfileTabState extends State<SellerProfileTab>
       );
 
       if (pickedImage != null) {
-        // التحقق من وجود الملف
         final File imageFile = File(pickedImage.path);
         if (await imageFile.exists()) {
           setState(() {
             _imageFile = imageFile;
           });
-
-          // تحويل الصورة إلى Base64 بالطريقة الصحيحة
           await _convertImageToBase64();
         } else {
           _showErrorSnackBar('لم يتم العثور على الصورة المحددة');
         }
-      } else {
-        _showErrorSnackBar('لم يتم اختيار أي صورة');
       }
     } catch (e) {
       _showErrorSnackBar('خطأ في اختيار الصورة: $e');
     }
   }
 
-  // تحويل الصورة إلى Base64 - مصحح بالطريقة الصحيحة من المراجع
+  // تحويل الصورة إلى Base64 مع ضغط محسن
   Future<void> _convertImageToBase64() async {
     if (_imageFile == null) return;
 
     try {
-      // التحقق من وجود الملف
       if (!await _imageFile!.exists()) {
         _showErrorSnackBar('الملف غير موجود');
         return;
       }
 
-      // قراءة الصورة كـ bytes - الطريقة الصحيحة من المراجع
-      final bytes = await _imageFile!.readAsBytes();
+      Uint8List imageBytes = await _imageFile!.readAsBytes();
 
-      // التحقق من حجم الصورة (الحد الأقصى 1MB)
-      if (bytes.length > 1024 * 1024) {
-        _showErrorSnackBar(
-            'حجم الصورة كبير جداً. يرجى اختيار صورة أصغر من 1MB');
-        setState(() {
-          _imageFile = null;
-        });
+      // فك تشفير الصورة وضغطها
+      img.Image? image = img.decodeImage(imageBytes);
+      if (image == null) {
+        _showErrorSnackBar('فشل في معالجة الصورة');
         return;
       }
 
-      // تحويل إلى Base64 - الطريقة الصحيحة من المراجع
-      String base64String = base64Encode(bytes);
+      // تغيير حجم الصورة إذا كانت كبيرة
+      if (image.width > 400 || image.height > 400) {
+        image = img.copyResize(
+          image,
+          width: image.width > image.height ? 400 : null,
+          height: image.height > image.width ? 400 : null,
+        );
+      }
+
+      // ضغط الصورة وتحويلها إلى JPEG
+      List<int> compressedBytes = img.encodeJpg(image, quality: 70);
+
+      // التحقق من الحجم النهائي
+      if (compressedBytes.length > 1024 * 1024) {
+        compressedBytes = img.encodeJpg(image, quality: 50);
+      }
+
+      String base64String = base64Encode(compressedBytes);
 
       setState(() {
         _base64Image = base64String;
       });
 
       _showSuccessSnackBar('تم تحضير الصورة بنجاح');
-      print("imgbytes : $base64String"); // للتأكد من التحويل
     } catch (e) {
       _showErrorSnackBar('فشل في معالجة الصورة: $e');
       setState(() {
@@ -198,22 +241,50 @@ class _ProfileTabState extends State<SellerProfileTab>
     }
   }
 
-  // حفظ التغييرات مع الصورة المحولة إلى Base64
+  // التحقق من صحة رقم الهاتف - محسن[2]
+  bool _isValidPhoneNumber(String phone) {
+    // إزالة المسافات والرموز
+    String cleanPhone = phone.replaceAll(RegExp(r'[^\d]'), '');
+    
+    // التحقق من أن الرقم يبدأ بـ 06 أو 07 أو 05 ويحتوي على 10 أرقام تماماً
+    return RegExp(r'^(06|07|05)\d{8}$').hasMatch(cleanPhone);
+  }
+
+  // حفظ التغييرات مع التحقق المحسن
   Future<void> _saveChanges(Map<String, dynamic> userData) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
+    if (_currentUserId == null) {
+      _showErrorSnackBar('خطأ: لم يتم العثور على معرف المستخدم');
+      return;
+    }
+
+    // التحقق من صحة البيانات
+    if (_nameController.text.trim().isEmpty) {
+      _showErrorSnackBar('يرجى إدخال الاسم');
+      return;
+    }
+
+    if (_usernameController.text.trim().isEmpty) {
+      _showErrorSnackBar('يرجى إدخال اسم المستخدم');
+      return;
+    }
+
+    if (_phoneController.text.trim().isNotEmpty && !_isValidPhoneNumber(_phoneController.text.trim())) {
+      _showErrorSnackBar('رقم الهاتف غير صحيح. يجب أن يبدأ بـ 06 أو 07 أو 05 ويحتوي على 10 أرقام');
+      return;
+    }
 
     setState(() {
       _isLoading = true;
     });
 
     try {
-      // تحضير البيانات للحفظ
       Map<String, dynamic> updateData = {
         'name': _nameController.text.trim(),
         'username': _usernameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'address': _addressController.text.trim(),
+        'businessName': _businessNameController.text.trim(),
+        'businessDescription': _businessDescriptionController.text.trim(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
@@ -223,8 +294,8 @@ class _ProfileTabState extends State<SellerProfileTab>
         updateData['hasProfileImage'] = true;
       }
 
-      // تحديث بيانات المستخدم في Firestore
-      await _firestore.collection('users').doc(user.uid).update(updateData);
+      // تحديث بيانات المستخدم في Firestore مع التأكد من المعرف
+      await _firestore.collection('users').doc(_currentUserId!).update(updateData);
 
       setState(() {
         _isEditing = false;
@@ -242,22 +313,24 @@ class _ProfileTabState extends State<SellerProfileTab>
     }
   }
 
-  // تسجيل الخروج
+  // تسجيل الخروج - محسن
   Future<void> _logout() async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('تأكيد تسجيل الخروج',
-            style: TextStyle(fontFamily: 'Cairo')),
-        content: const Text('هل أنت متأكد من تسجيل الخروج؟',
-            style: TextStyle(fontFamily: 'Cairo')),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('تأكيد تسجيل الخروج', style: TextStyle(fontFamily: 'Cairo')),
+        content: const Text('هل أنت متأكد من تسجيل الخروج؟', style: TextStyle(fontFamily: 'Cairo')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
+            child: Text('إلغاء', style: TextStyle(fontFamily: 'Cairo', color: Colors.grey[600])),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () async {
               try {
                 final prefs = await SharedPreferences.getInstance();
@@ -266,15 +339,13 @@ class _ProfileTabState extends State<SellerProfileTab>
                 await _auth.signOut();
 
                 if (context.mounted) {
-                  Navigator.of(context)
-                      .pushNamedAndRemoveUntil('/login', (route) => false);
+                  Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
                 }
               } catch (e) {
                 _showErrorSnackBar('حدث خطأ أثناء تسجيل الخروج: $e');
               }
             },
-            child: const Text('تسجيل الخروج',
-                style: TextStyle(fontFamily: 'Cairo')),
+            child: const Text('تسجيل الخروج', style: TextStyle(fontFamily: 'Cairo')),
           ),
         ],
       ),
@@ -285,7 +356,7 @@ class _ProfileTabState extends State<SellerProfileTab>
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message, style: const TextStyle(fontFamily: 'Cairo')),
         backgroundColor: Colors.green,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -297,7 +368,7 @@ class _ProfileTabState extends State<SellerProfileTab>
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message, style: const TextStyle(fontFamily: 'Cairo')),
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -307,7 +378,23 @@ class _ProfileTabState extends State<SellerProfileTab>
 
   @override
   Widget build(BuildContext context) {
-    final user = _auth.currentUser;
+    // التحقق من وجود المستخدم
+    if (_currentUserId == null) {
+      return Container(
+        color: backgroundColor,
+        child: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف المستخدم\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -319,7 +406,8 @@ class _ProfileTabState extends State<SellerProfileTab>
         return Container(
           color: backgroundColor,
           child: FutureBuilder<DocumentSnapshot>(
-            future: _firestore.collection('users').doc(user?.uid).get(),
+            // التأكد من استخدام المعرف الصحيح
+            future: _firestore.collection('users').doc(_currentUserId!).get(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return Center(
@@ -344,15 +432,15 @@ class _ProfileTabState extends State<SellerProfileTab>
                 _usernameController.text = userData['username'] ?? '';
                 _phoneController.text = userData['phone'] ?? '';
                 _addressController.text = userData['address'] ?? '';
+                _businessNameController.text = userData['businessName'] ?? '';
+                _businessDescriptionController.text = userData['businessDescription'] ?? '';
               }
 
               return FadeTransition(
                 opacity: _fadeAnimation,
                 child: _isEditing
-                    ? _buildEditProfileForm(
-                        userData, isVerySmallScreen, screenWidth)
-                    : _buildProfileView(
-                        userData, isVerySmallScreen, screenWidth),
+                    ? _buildEditProfileForm(userData, isVerySmallScreen, screenWidth)
+                    : _buildProfileView(userData, isVerySmallScreen, screenWidth),
               );
             },
           ),
@@ -361,9 +449,8 @@ class _ProfileTabState extends State<SellerProfileTab>
     );
   }
 
-  // بناء صفحة عرض الملف الشخصي
-  Widget _buildProfileView(Map<String, dynamic> userData,
-      bool isVerySmallScreen, double screenWidth) {
+  // بناء صفحة عرض الملف الشخصي - محسن
+  Widget _buildProfileView(Map<String, dynamic> userData, bool isVerySmallScreen, double screenWidth) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
       child: Column(
@@ -414,7 +501,7 @@ class _ProfileTabState extends State<SellerProfileTab>
                 top: 16,
                 right: 16,
                 child: CircleAvatar(
-                  backgroundColor: Colors.white.withOpacity(0.8),
+                  backgroundColor: Colors.white.withOpacity(0.9),
                   radius: isVerySmallScreen ? 18 : 22,
                   child: IconButton(
                     icon: Icon(
@@ -437,7 +524,7 @@ class _ProfileTabState extends State<SellerProfileTab>
 
           // اسم المستخدم
           Text(
-            userData['name'] ?? '',
+            userData['name'] ?? 'بائع',
             style: TextStyle(
               fontSize: isVerySmallScreen ? 18 : 22,
               fontWeight: FontWeight.bold,
@@ -450,23 +537,75 @@ class _ProfileTabState extends State<SellerProfileTab>
             '@${userData['username'] ?? ''}',
             style: TextStyle(
               fontSize: isVerySmallScreen ? 14 : 16,
-              color: Colors.grey,
+              color: Colors.grey[600],
               fontFamily: 'Cairo',
             ),
           ),
 
           SizedBox(height: isVerySmallScreen ? 16 : 20),
 
+          // معلومات المتجر
+          if (userData['businessName'] != null && userData['businessName'].isNotEmpty) ...[
+            Card(
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              elevation: 2,
+              child: Padding(
+                padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'معلومات المتجر',
+                      style: TextStyle(
+                        fontSize: isVerySmallScreen ? 16 : 18,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Cairo',
+                        color: primaryColor,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _buildInfoRow(
+                      Icons.store,
+                      'اسم المتجر',
+                      userData['businessName'] ?? '',
+                      isVerySmallScreen,
+                    ),
+                    if (userData['businessDescription'] != null && userData['businessDescription'].isNotEmpty) ...[
+                      const Divider(),
+                      _buildInfoRow(
+                        Icons.description,
+                        'وصف المتجر',
+                        userData['businessDescription'] ?? '',
+                        isVerySmallScreen,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+
           // معلومات الاتصال
           Card(
             margin: const EdgeInsets.symmetric(vertical: 8),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             elevation: 2,
             child: Padding(
               padding: EdgeInsets.all(isVerySmallScreen ? 16 : 20),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    'معلومات الاتصال',
+                    style: TextStyle(
+                      fontSize: isVerySmallScreen ? 16 : 18,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Cairo',
+                      color: primaryColor,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   _buildInfoRow(
                     Icons.email,
                     'البريد الإلكتروني',
@@ -522,9 +661,8 @@ class _ProfileTabState extends State<SellerProfileTab>
     );
   }
 
-  // بناء نموذج تعديل الملف الشخصي - مصحح
-  Widget _buildEditProfileForm(Map<String, dynamic> userData,
-      bool isVerySmallScreen, double screenWidth) {
+  // بناء نموذج تعديل الملف الشخصي - محسن
+  Widget _buildEditProfileForm(Map<String, dynamic> userData, bool isVerySmallScreen, double screenWidth) {
     return SingleChildScrollView(
       padding: EdgeInsets.all(isVerySmallScreen ? 16 : 24),
       child: Column(
@@ -532,7 +670,7 @@ class _ProfileTabState extends State<SellerProfileTab>
         children: [
           SizedBox(height: isVerySmallScreen ? 10 : 16),
 
-          // صورة المستخدم مع زر الكاميرا المصحح
+          // صورة المستخدم مع زر الكاميرا
           Stack(
             alignment: Alignment.bottomRight,
             children: [
@@ -552,12 +690,12 @@ class _ProfileTabState extends State<SellerProfileTab>
                       : null,
                 ),
               ),
-              // زر الكاميرا المصحح
+              // زر الكاميرا
               Positioned(
                 bottom: 0,
                 right: 0,
                 child: GestureDetector(
-                  onTap: _pickImage, // استدعاء الدالة المصححة
+                  onTap: _pickImage,
                   child: CircleAvatar(
                     backgroundColor: primaryColor,
                     radius: isVerySmallScreen ? 16 : 20,
@@ -574,7 +712,18 @@ class _ProfileTabState extends State<SellerProfileTab>
 
           SizedBox(height: isVerySmallScreen ? 20 : 24),
 
-          // حقول التعديل
+          // حقول التعديل الشخصية
+          Text(
+            'المعلومات الشخصية',
+            style: TextStyle(
+              fontSize: isVerySmallScreen ? 16 : 18,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Cairo',
+              color: primaryColor,
+            ),
+          ),
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
+
           _buildTextField(
             controller: _nameController,
             label: 'الاسم واللقب',
@@ -593,7 +742,7 @@ class _ProfileTabState extends State<SellerProfileTab>
 
           _buildTextField(
             controller: _phoneController,
-            label: 'رقم الهاتف',
+            label: 'رقم الهاتف (06xxxxxxxx)',
             icon: Icons.phone,
             keyboardType: TextInputType.phone,
             isVerySmallScreen: isVerySmallScreen,
@@ -604,6 +753,36 @@ class _ProfileTabState extends State<SellerProfileTab>
             controller: _addressController,
             label: 'العنوان',
             icon: Icons.location_on,
+            isVerySmallScreen: isVerySmallScreen,
+          ),
+
+          SizedBox(height: isVerySmallScreen ? 20 : 24),
+
+          // حقول معلومات المتجر
+          Text(
+            'معلومات المتجر',
+            style: TextStyle(
+              fontSize: isVerySmallScreen ? 16 : 18,
+              fontWeight: FontWeight.bold,
+              fontFamily: 'Cairo',
+              color: primaryColor,
+            ),
+          ),
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
+
+          _buildTextField(
+            controller: _businessNameController,
+            label: 'اسم المتجر',
+            icon: Icons.store,
+            isVerySmallScreen: isVerySmallScreen,
+          ),
+          SizedBox(height: isVerySmallScreen ? 12 : 16),
+
+          _buildTextField(
+            controller: _businessDescriptionController,
+            label: 'وصف المتجر',
+            icon: Icons.description,
+            maxLines: 3,
             isVerySmallScreen: isVerySmallScreen,
           ),
 
@@ -624,8 +803,7 @@ class _ProfileTabState extends State<SellerProfileTab>
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.grey[700],
                     side: BorderSide(color: Colors.grey[300]!),
-                    padding: EdgeInsets.symmetric(
-                        vertical: isVerySmallScreen ? 12 : 14),
+                    padding: EdgeInsets.symmetric(vertical: isVerySmallScreen ? 12 : 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -646,8 +824,7 @@ class _ProfileTabState extends State<SellerProfileTab>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: secondaryColor,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                        vertical: isVerySmallScreen ? 12 : 14),
+                    padding: EdgeInsets.symmetric(vertical: isVerySmallScreen ? 12 : 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
                     ),
@@ -707,17 +884,19 @@ class _ProfileTabState extends State<SellerProfileTab>
     return null;
   }
 
-  // بناء حقل إدخال
+  // بناء حقل إدخال - محسن
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
     required bool isVerySmallScreen,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
+      maxLines: maxLines,
       style: TextStyle(
         fontFamily: 'Cairo',
         fontSize: isVerySmallScreen ? 14 : 16,
@@ -748,11 +927,11 @@ class _ProfileTabState extends State<SellerProfileTab>
     );
   }
 
-  Widget _buildInfoRow(
-      IconData icon, String label, String value, bool isVerySmallScreen) {
+  Widget _buildInfoRow(IconData icon, String label, String value, bool isVerySmallScreen) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: isVerySmallScreen ? 6 : 8),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Icon(icon, color: secondaryColor, size: isVerySmallScreen ? 20 : 24),
           const SizedBox(width: 12),
@@ -772,7 +951,6 @@ class _ProfileTabState extends State<SellerProfileTab>
                 fontFamily: 'Cairo',
                 fontSize: isVerySmallScreen ? 12 : 14,
               ),
-              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],

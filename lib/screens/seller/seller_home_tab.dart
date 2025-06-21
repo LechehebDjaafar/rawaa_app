@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
 
 class SellerHomeTab extends StatefulWidget {
@@ -10,6 +11,9 @@ class SellerHomeTab extends StatefulWidget {
 }
 
 class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProviderStateMixin {
+  // الحصول على معرف البائع الحالي - هذا هو التعديل الأساسي
+  final String? sellerId = FirebaseAuth.instance.currentUser?.uid;
+  
   // مراجع لقاعدة البيانات Firestore
   final CollectionReference _ordersCollection = FirebaseFirestore.instance.collection('orders');
   final CollectionReference _salesCollection = FirebaseFirestore.instance.collection('sales');
@@ -122,13 +126,20 @@ class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProvider
   }
 
   void _fetchRealTimeData() {
+    // التحقق من وجود sellerId قبل تنفيذ أي استعلام
+    if (sellerId == null) {
+      print('خطأ: لم يتم العثور على معرف البائع');
+      return;
+    }
+    
     setState(() {
       _isLoading = true;
     });
     
-    // استماع للطلبات الجديدة
+    // استماع للطلبات الجديدة مع إضافة فلترة sellerId
     _ordersCollection
         .where('status', isEqualTo: 'جديد')
+        .where('sellerId', isEqualTo: sellerId) // إضافة الفلترة هنا
         .snapshots()
         .listen((snapshot) {
       setState(() {
@@ -143,8 +154,9 @@ class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProvider
       });
     });
 
-    // استماع لإجمالي المبيعات
+    // استماع لإجمالي المبيعات مع إضافة فلترة sellerId
     _salesCollection
+        .where('sellerId', isEqualTo: sellerId) // إضافة الفلترة هنا
         .snapshots()
         .listen((snapshot) {
       try {
@@ -185,8 +197,9 @@ class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProvider
       });
     });
 
-    // استماع لمتوسط التقييمات
+    // استماع لمتوسط التقييمات مع إضافة فلترة sellerId
     _ratingsCollection
+        .where('sellerId', isEqualTo: sellerId) // إضافة الفلترة هنا
         .snapshots()
         .listen((snapshot) {
       try {
@@ -226,6 +239,24 @@ class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من وجود sellerId قبل عرض المحتوى
+    if (sellerId == null) {
+      return Container(
+        color: backgroundColor,
+        child: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف البائع\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
+    
     return Container(
       color: backgroundColor,
       child: FadeTransition(
@@ -491,7 +522,12 @@ class _SellerHomeTabState extends State<SellerHomeTab> with SingleTickerProvider
             ),
             const SizedBox(height: 8),
             StreamBuilder<QuerySnapshot>(
-              stream: _ordersCollection.limit(5).snapshots(),
+              // إضافة فلترة sellerId في استعلام الطلبات الأخيرة
+              stream: _ordersCollection
+                  .where('sellerId', isEqualTo: sellerId)
+                  .orderBy('createdAt', descending: true)
+                  .limit(5)
+                  .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting && _isLoading) {
                   return const Center(

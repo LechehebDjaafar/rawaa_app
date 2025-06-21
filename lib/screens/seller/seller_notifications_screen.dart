@@ -15,12 +15,15 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       FirebaseFirestore.instance.collection('seller_notifications');
   final CollectionReference _ordersCollection =
       FirebaseFirestore.instance.collection('orders');
-  final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+  
+  // تحسين: التحقق من وجود المستخدم قبل الحصول على UID
+  String? get _currentUserId => FirebaseAuth.instance.currentUser?.uid;
+  
   String _selectedFilter = 'الكل';
   
   // ألوان التطبيق
   final Color primaryColor = const Color(0xFF1976D2);
-  final Color secondaryColor =  const Color.fromARGB(255, 78, 94, 243);
+  final Color secondaryColor = const Color.fromARGB(255, 78, 94, 243);
   final Color accentColor = const Color(0xFF4ECDC4);
   final Color backgroundColor = const Color(0xFFF5F7FA);
   final Color alertColor = const Color(0xFFFF8A65);
@@ -29,7 +32,7 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   
-  // متغير للتحكم في Stream - مصحح
+  // متغير للتحكم في Stream
   late Stream<QuerySnapshot> _notificationsStream;
   bool _isInitialized = false;
 
@@ -53,15 +56,22 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
     _initializeData();
   }
 
-  // تهيئة البيانات بالترتيب الصحيح - مصحح
+  // تهيئة البيانات مع التحقق من وجود المستخدم
   Future<void> _initializeData() async {
+    // التحقق من وجود المستخدم أولاً
+    if (_currentUserId == null) {
+      setState(() {
+        _isInitialized = true;
+      });
+      return;
+    }
+    
     try {
       await _ensureNotificationsCollectionExists();
-      await _createSampleNotifications();
       
       // تهيئة Stream مرة واحدة فقط بعد إنشاء البيانات
       _notificationsStream = _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .orderBy('createdAt', descending: true)
           .snapshots();
       
@@ -98,8 +108,10 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
 
   // إعداد مستمع الإشعارات للطلبات الجديدة
   void _setupNotificationListener() {
+    if (_currentUserId == null) return;
+    
     _ordersCollection
-        .where('sellerId', isEqualTo: _currentUserId)
+        .where('sellerId', isEqualTo: _currentUserId!)
         .snapshots()
         .listen((snapshot) {
       for (var change in snapshot.docChanges) {
@@ -112,11 +124,13 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
 
   // إنشاء إشعار للطلب الجديد
   Future<void> _createOrderNotification(Map<String, dynamic> orderData, String orderId) async {
+    if (_currentUserId == null) return;
+    
     try {
       await _notificationsCollection.add({
-        'sellerId': _currentUserId,
+        'sellerId': _currentUserId!,
         'title': 'طلب جديد!',
-        'body': 'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount']} دج',
+        'body': 'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} دج',
         'type': 'new_order',
         'priority': 'high',
         'isRead': false,
@@ -131,86 +145,13 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       
       _showLocalNotification(
         'طلب جديد!',
-        'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount']} دج'
+        'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} دج'
       );
     } catch (e) {
       print('خطأ في إنشاء إشعار الطلب: $e');
     }
   }
 
-  // إنشاء إشعارات تجريبية مناسبة لتطبيق الري والهيدروليك - مصحح
-  Future<void> _createSampleNotifications() async {
-    if (_currentUserId.isEmpty) return;
-    
-    try {
-      // التحقق من وجود إشعارات مسبقة لتجنب التكرار
-      final existingNotifications = await _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
-          .get();
-      
-      if (existingNotifications.docs.isEmpty) {
-        final sampleNotifications = [
-          {
-            'title': 'طلب جديد - معدات ري',
-            'body': 'طلب جديد لشراء نظام ري بالتنقيط من أحمد محمد بقيمة 25,000 دج',
-            'type': 'new_order',
-            'priority': 'high',
-            'isRead': false,
-            'sellerId': _currentUserId,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-          {
-            'title': 'استفسار عن المنتج',
-            'body': 'سؤال حول مضخة المياه الغاطسة 2HP - هل متوفرة بالمخزون؟',
-            'type': 'message',
-            'priority': 'medium',
-            'isRead': false,
-            'sellerId': _currentUserId,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-          {
-            'title': 'تم تأكيد الدفع',
-            'body': 'تم استلام دفعة بقيمة 15,500 دج لطلب رقم #1234',
-            'type': 'payment',
-            'priority': 'medium',
-            'isRead': true,
-            'sellerId': _currentUserId,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-          {
-            'title': 'منتج قارب على النفاد',
-            'body': 'تحذير: أنابيب PVC 4 بوصة - المخزون أقل من 10 قطع',
-            'type': 'stock_alert',
-            'priority': 'high',
-            'isRead': false,
-            'sellerId': _currentUserId,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-          {
-            'title': 'تقييم جديد',
-            'body': 'حصلت على تقييم 5 نجوم من فاطمة أحمد على مضخة الري',
-            'type': 'review',
-            'priority': 'low',
-            'isRead': true,
-            'sellerId': _currentUserId,
-            'createdAt': FieldValue.serverTimestamp(),
-          },
-        ];
-        
-        // إضافة الإشعارات باستخدام batch للتأكد من إضافتها جميعاً
-        final batch = FirebaseFirestore.instance.batch();
-        for (var notification in sampleNotifications) {
-          final docRef = _notificationsCollection.doc();
-          batch.set(docRef, notification);
-        }
-        await batch.commit();
-        
-        print('تم إنشاء ${sampleNotifications.length} إشعار تجريبي');
-      }
-    } catch (e) {
-      print('خطأ في إنشاء الإشعارات التجريبية: $e');
-    }
-  }
 
   @override
   void dispose() {
@@ -220,6 +161,8 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
 
   // عرض الإشعار المحلي
   void _showLocalNotification(String title, String body) {
+    if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Column(
@@ -258,11 +201,38 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من وجود المستخدم
+    if (_currentUserId == null) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        appBar: AppBar(
+          title: const Text(
+            'الإشعارات',
+            style: TextStyle(
+              fontFamily: 'Cairo',
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          centerTitle: true,
+          backgroundColor: primaryColor,
+        ),
+        body: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف البائع\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
+    
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenHeight = constraints.maxHeight;
-        final screenWidth = constraints.maxWidth;
-        final isSmallScreen = screenHeight < 600;
         final isVerySmallScreen = screenHeight < 500;
         
         return Scaffold(
@@ -420,7 +390,7 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
                         ),
                       ),
                       
-                      // قائمة الإشعارات - مصحح
+                      // قائمة الإشعارات
                       Expanded(
                         child: StreamBuilder<QuerySnapshot>(
                           stream: _getFilteredNotificationsStream(),
@@ -558,9 +528,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Widget _getNotificationCount() {
+    if (_currentUserId == null) return const Text('0');
+    
     return StreamBuilder<QuerySnapshot>(
       stream: _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
@@ -578,9 +550,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Widget _getUnreadNotificationCount() {
+    if (_currentUserId == null) return const Text('0');
+    
     return StreamBuilder<QuerySnapshot>(
       stream: _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .where('isRead', isEqualTo: false)
           .snapshots(),
       builder: (context, snapshot) {
@@ -599,9 +573,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Widget _getOrderNotificationCount() {
+    if (_currentUserId == null) return const Text('0');
+    
     return StreamBuilder<QuerySnapshot>(
       stream: _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .where('type', isEqualTo: 'new_order')
           .snapshots(),
       builder: (context, snapshot) {
@@ -620,8 +596,13 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Stream<QuerySnapshot> _getFilteredNotificationsStream() {
+    if (_currentUserId == null) {
+      // إرجاع stream فارغ إذا لم يكن هناك مستخدم
+      return const Stream.empty();
+    }
+    
     Query query = _notificationsCollection
-        .where('sellerId', isEqualTo: _currentUserId)
+        .where('sellerId', isEqualTo: _currentUserId!)
         .orderBy('createdAt', descending: true);
     
     switch (_selectedFilter) {
@@ -712,9 +693,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Future<void> _createTestNotification(Map<String, String> notification) async {
+    if (_currentUserId == null) return;
+    
     try {
       await _notificationsCollection.add({
-        'sellerId': _currentUserId,
+        'sellerId': _currentUserId!,
         'title': notification['title'],
         'body': notification['body'],
         'type': notification['type'],
@@ -724,12 +707,14 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       });
       _showLocalNotification(notification['title']!, notification['body']!);
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -745,9 +730,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Future<void> _markAllAsRead() async {
+    if (_currentUserId == null) return;
+    
     try {
       final query = await _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .where('isRead', isEqualTo: false)
           .get();
       
@@ -762,19 +749,23 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       
       await batch.commit();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم تحديد جميع الإشعارات كمقروءة'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تحديد جميع الإشعارات كمقروءة'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -782,19 +773,23 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
     try {
       await _notificationsCollection.doc(notificationId).delete();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم حذف الإشعار'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حذف الإشعار'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -823,9 +818,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
   }
 
   Future<void> _clearAllNotifications() async {
+    if (_currentUserId == null) return;
+    
     try {
       final query = await _notificationsCollection
-          .where('sellerId', isEqualTo: _currentUserId)
+          .where('sellerId', isEqualTo: _currentUserId!)
           .get();
       
       final batch = FirebaseFirestore.instance.batch();
@@ -836,24 +833,28 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       
       await batch.commit();
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('تم حذف جميع الإشعارات'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم حذف جميع الإشعارات'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('حدث خطأ: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('حدث خطأ: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 }
 
-// بطاقة الإشعار للبائعين - مصححة
+// بطاقة الإشعار للبائعين - محسنة
 class NotificationCard extends StatelessWidget {
   final Map<String, dynamic> notification;
   final String notificationId;

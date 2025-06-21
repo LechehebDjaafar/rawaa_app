@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:math';
+// import 'dart:math';
 
 class SellerMessagesTab extends StatefulWidget {
   const SellerMessagesTab({super.key});
@@ -13,7 +13,10 @@ class SellerMessagesTab extends StatefulWidget {
 class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTickerProviderStateMixin {
   final CollectionReference _messagesCollection = FirebaseFirestore.instance.collection('conversations');
   final CollectionReference _usersCollection = FirebaseFirestore.instance.collection('users');
-  final String _currentUserId = FirebaseAuth.instance.currentUser?.uid ?? 'seller_id';
+  
+  // إضافة الفلترة الصحيحة - الحصول على معرف البائع الحالي
+  final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  
   bool _isLoading = true;
   
   // ألوان التطبيق
@@ -84,6 +87,8 @@ class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTicker
 
   // فتح صفحة المحادثة
   void _openConversation(String conversationId, String customerName) {
+    if (_currentUserId == null) return;
+    
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -98,6 +103,24 @@ class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من وجود معرف البائع
+    if (_currentUserId == null) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف البائع\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
+    
     return Scaffold(
       backgroundColor: backgroundColor,
       body: _isLoading
@@ -125,8 +148,9 @@ class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTicker
                   ),
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
+                      // إضافة الفلترة الصحيحة هنا - عرض المحادثات للبائع الحالي فقط
                       stream: _messagesCollection
-                          .where('participants', arrayContains: _currentUserId)
+                          .where('sellerId', isEqualTo: _currentUserId) // فلترة بناءً على sellerId
                           .orderBy('lastMessageTime', descending: true)
                           .snapshots(),
                       builder: (context, snapshot) {
@@ -208,9 +232,8 @@ class _SellerMessagesTabState extends State<SellerMessagesTab> with SingleTicker
                             final conversation = conversations[index].data() as Map<String, dynamic>;
                             final conversationId = conversations[index].id;
                             
-                            // استخراج معرف الزبون
-                            final participants = conversation['participants'] as List<dynamic>;
-                            final customerId = participants.firstWhere((id) => id != _currentUserId, orElse: () => '');
+                            // استخراج معرف الزبون من المحادثة
+                            final customerId = conversation['customerId'] ?? '';
                             
                             return FutureBuilder<DocumentSnapshot>(
                               future: _usersCollection.doc(customerId).get(),
