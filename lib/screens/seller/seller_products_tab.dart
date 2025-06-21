@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
@@ -14,6 +15,9 @@ class SellerProductsTab extends StatefulWidget {
 }
 
 class _SellerProductsTabState extends State<SellerProductsTab> with SingleTickerProviderStateMixin {
+  // إضافة الفلترة الصحيحة - الحصول على معرف البائع الحالي
+  final String? _currentSellerId = FirebaseAuth.instance.currentUser?.uid;
+  
   // استخدام Firestore بدلاً من Firebase Storage
   final CollectionReference _productsCollection = FirebaseFirestore.instance.collection('products');
   
@@ -130,7 +134,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     
     _initializeCategories();
     _animationController.forward();
-    _ensureProductsCollectionExists();
+    // تم حذف استدعاء _ensureProductsCollectionExists() لتجنب إنشاء منتجات تجريبية
   }
 
   // تهيئة قائمة الفئات المسطحة
@@ -145,23 +149,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       for (var subcategory in category['subcategories']) {
         _allCategories.add('${category['name']} - $subcategory');
       }
-    }
-  }
-
-  // التأكد من وجود مجموعة المنتجات
-  Future<void> _ensureProductsCollectionExists() async {
-    try {
-      final snapshot = await _productsCollection.limit(1).get();
-      if (snapshot.docs.isEmpty) {
-        print('إنشاء مجموعة المنتجات لأول مرة');
-        DocumentReference tempDoc = await _productsCollection.add({
-          'temp': true,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await tempDoc.delete();
-      }
-    } catch (e) {
-      print('خطأ في التحقق من وجود مجموعة المنتجات: $e');
     }
   }
 
@@ -255,7 +242,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     }
   }
 
-  // إضافة أو تعديل منتج مع Base64
+  // إضافة أو تعديل منتج مع Base64 وإضافة sellerId
   Future<void> _saveProduct() async {
     final String name = _nameController.text.trim();
     final String description = _descriptionController.text.trim();
@@ -264,6 +251,12 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
 
     if (name.isEmpty || description.isEmpty || price == null || _selectedCategory == null || stock == null) {
       _showErrorSnackBar('يرجى ملء جميع الحقول المطلوبة واختيار فئة المنتج');
+      return;
+    }
+
+    // التحقق من وجود معرف البائع
+    if (_currentSellerId == null) {
+      _showErrorSnackBar('خطأ: لم يتم العثور على معرف البائع');
       return;
     }
 
@@ -295,16 +288,14 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
         await _productsCollection.doc(productId).update(updates);
         _showSuccessSnackBar('تم تعديل المنتج بنجاح');
       } else {
-        // إنشاء منتج جديد
-        final String sellerId = "current_user_id"; // استبدل هذا بمعرف المستخدم الحالي
-        
+        // إنشاء منتج جديد مع إضافة sellerId
         final Map<String, dynamic> productData = {
           'name': name,
           'description': description,
           'price': price,
           'category': _selectedCategory,
           'stock': stock,
-          'sellerId': sellerId,
+          'sellerId': _currentSellerId!, // إضافة معرف البائع الحالي
           'createdAt': FieldValue.serverTimestamp(),
           'searchKeywords': _generateSearchKeywords(name, _selectedCategory!),
         };
@@ -728,6 +719,24 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من وجود معرف البائع
+    if (_currentSellerId == null) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف البائع\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
+    
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenWidth = constraints.maxWidth;
@@ -801,7 +810,11 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
 
   Widget _buildProductsList(bool isSmallScreen, bool isVerySmallScreen) {
     return StreamBuilder<QuerySnapshot>(
-      stream: _productsCollection.snapshots(),
+      // إضافة الفلترة الصحيحة هنا - عرض منتجات البائع الحالي فقط
+      stream: _productsCollection
+          .where('sellerId', isEqualTo: _currentSellerId!)
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -834,6 +847,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
           );
         }
 
+        // هنا ستظهر رسالة "لا يوجد منتجات" إذا لم توجد منتجات حقيقية
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return _buildEmptyProductsView(isVerySmallScreen);
         }

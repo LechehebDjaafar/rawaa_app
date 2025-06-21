@@ -52,11 +52,11 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       ),
     );
     
-    // تهيئة البيانات بالترتيب الصحيح
+    // تهيئة البيانات بالترتيب الصحيح - بدون إنشاء إشعارات تجريبية
     _initializeData();
   }
 
-  // تهيئة البيانات مع التحقق من وجود المستخدم
+  // تهيئة البيانات مع التحقق من وجود المستخدم - بدون إشعارات تجريبية
   Future<void> _initializeData() async {
     // التحقق من وجود المستخدم أولاً
     if (_currentUserId == null) {
@@ -67,9 +67,7 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
     }
     
     try {
-      await _ensureNotificationsCollectionExists();
-      
-      // تهيئة Stream مرة واحدة فقط بعد إنشاء البيانات
+      // تهيئة Stream مباشرة بدون إنشاء إشعارات تجريبية
       _notificationsStream = _notificationsCollection
           .where('sellerId', isEqualTo: _currentUserId!)
           .orderBy('createdAt', descending: true)
@@ -86,23 +84,6 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       setState(() {
         _isInitialized = true;
       });
-    }
-  }
-
-  // إنشاء مجموعة الإشعارات تلقائياً
-  Future<void> _ensureNotificationsCollectionExists() async {
-    try {
-      final snapshot = await _notificationsCollection.limit(1).get();
-      if (snapshot.docs.isEmpty) {
-        print('إنشاء مجموعة إشعارات البائعين لأول مرة');
-        DocumentReference tempDoc = await _notificationsCollection.add({
-          'temp': true,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await tempDoc.delete();
-      }
-    } catch (e) {
-      print('خطأ في إنشاء مجموعة الإشعارات: $e');
     }
   }
 
@@ -130,7 +111,7 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       await _notificationsCollection.add({
         'sellerId': _currentUserId!,
         'title': 'طلب جديد!',
-        'body': 'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} دج',
+        'body': 'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} د.ج',
         'type': 'new_order',
         'priority': 'high',
         'isRead': false,
@@ -145,13 +126,12 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
       
       _showLocalNotification(
         'طلب جديد!',
-        'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} دج'
+        'لديك طلب جديد من ${orderData['customer'] ?? 'زبون'} بقيمة ${orderData['totalAmount'] ?? 0} د.ج'
       );
     } catch (e) {
       print('خطأ في إنشاء إشعار الطلب: $e');
     }
   }
-
 
   @override
   void dispose() {
@@ -262,14 +242,6 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
                 ),
                 onPressed: _markAllAsRead,
                 tooltip: 'تحديد الكل كمقروء',
-              ),
-              IconButton(
-                icon: Icon(
-                  Icons.add_alert,
-                  size: isVerySmallScreen ? 20 : 24,
-                ),
-                onPressed: _showCreateNotificationDialog,
-                tooltip: 'إنشاء إشعار تجريبي',
               ),
               IconButton(
                 icon: Icon(
@@ -427,6 +399,7 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
                               );
                             }
                             
+                            // هنا ستظهر رسالة "لا توجد إشعارات" إذا لم توجد إشعارات حقيقية
                             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
                               return Center(
                                 child: Column(
@@ -630,92 +603,6 @@ class _SellerNotificationsScreenState extends State<SellerNotificationsScreen>
     }
     
     return query.snapshots();
-  }
-
-  // باقي الدوال...
-  void _showCreateNotificationDialog() {
-    final List<Map<String, String>> sampleNotifications = [
-      {
-        'title': 'طلب جديد - نظام ري متقدم',
-        'body': 'طلب جديد لشراء نظام ري ذكي من سارة أحمد بقيمة 45,000 دج',
-        'type': 'new_order',
-      },
-      {
-        'title': 'استفسار عن التركيب',
-        'body': 'سؤال حول تكلفة تركيب شبكة ري للحديقة المنزلية',
-        'type': 'message',
-      },
-      {
-        'title': 'تحذير مخزون منخفض',
-        'body': 'مضخات الري الصغيرة - المخزون أقل من 5 قطع',
-        'type': 'stock_alert',
-      },
-      {
-        'title': 'تقييم ممتاز',
-        'body': 'حصلت على تقييم 5 نجوم من محمد علي على نظام الري بالتنقيط',
-        'type': 'review',
-      },
-    ];
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('إنشاء إشعار تجريبي', style: TextStyle(fontFamily: 'Cairo')),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: sampleNotifications.map((notification) {
-            return ListTile(
-              title: Text(
-                notification['title']!,
-                style: const TextStyle(fontFamily: 'Cairo', fontSize: 14),
-              ),
-              subtitle: Text(
-                notification['body']!,
-                style: const TextStyle(fontFamily: 'Cairo', fontSize: 12),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                await _createTestNotification(notification);
-              },
-            );
-          }).toList(),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('إلغاء', style: TextStyle(fontFamily: 'Cairo')),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createTestNotification(Map<String, String> notification) async {
-    if (_currentUserId == null) return;
-    
-    try {
-      await _notificationsCollection.add({
-        'sellerId': _currentUserId!,
-        'title': notification['title'],
-        'body': notification['body'],
-        'type': notification['type'],
-        'priority': 'medium',
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      _showLocalNotification(notification['title']!, notification['body']!);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('حدث خطأ: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
   }
 
   Future<void> _markAsRead(String notificationId) async {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class SellerOrdersTab extends StatefulWidget {
   const SellerOrdersTab({super.key});
@@ -12,15 +11,17 @@ class SellerOrdersTab extends StatefulWidget {
 
 class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProviderStateMixin {
   final CollectionReference _ordersCollection = FirebaseFirestore.instance.collection('orders');
-  bool _isLoading = true;
+  
+  // إضافة الفلترة الصحيحة - الحصول على معرف البائع الحالي
+  final String? _currentSellerId = FirebaseAuth.instance.currentUser?.uid;
+  
   String _selectedFilter = 'الكل';
 
   // ألوان التطبيق
   final Color primaryColor = const Color(0xFF1976D2);
-  final Color secondaryColor = const Color.fromARGB(255, 78, 94, 243);
+  final Color secondaryColor =  const Color.fromARGB(255, 78, 94, 243);
   final Color accentColor = const Color(0xFFFF8A65);
   final Color backgroundColor = const Color(0xFFF5F7FA);
-  final Color deliveryColor = const Color(0xFFFF6B35); // لون التوصيل
 
   // متغيرات للأنيميشن
   late AnimationController _animationController;
@@ -42,108 +43,8 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
       ),
     );
 
-    _ensureOrdersCollectionExists().then((_) {
-      setState(() {
-        _isLoading = false;
-      });
-      _animationController.forward();
-    });
-  }
-
-  // دالة للتحقق من وجود مجموعة الطلبات وإنشائها إذا لم تكن موجودة
-  Future<void> _ensureOrdersCollectionExists() async {
-    try {
-      final snapshot = await _ordersCollection.limit(1).get();
-      if (snapshot.docs.isEmpty) {
-        print('إنشاء مجموعة الطلبات لأول مرة');
-        DocumentReference tempDoc = await _ordersCollection.add({
-          'temp': true,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-        await tempDoc.delete();
-        
-        // إضافة طلبات تجريبية
-        await _createSampleOrders();
-      }
-    } catch (e) {
-      print('خطأ في التحقق من وجود مجموعة الطلبات: $e');
-    }
-  }
-
-  // إنشاء طلبات تجريبية مع مواقع التوصيل
-  Future<void> _createSampleOrders() async {
-    final sampleOrders = [
-      {
-        'customer': 'أحمد محمد',
-        'customerPhone': '0555123456',
-        'customerAddress': 'الجزائر العاصمة، حي باب الواد',
-        'items': [
-          {
-            'name': 'نظام ري بالتنقيط',
-            'quantity': 2,
-            'price': 1500.0,
-          },
-          {
-            'name': 'مضخة مياه 1HP',
-            'quantity': 1,
-            'price': 800.0,
-          },
-        ],
-        'totalAmount': 3800.0,
-        'status': 'جديد',
-        'createdAt': FieldValue.serverTimestamp(),
-        'notes': 'طلب عاجل - يرجى التسليم خلال 3 أيام',
-        'needsDelivery': true,
-        'deliveryAddress': 'شارع العربي بن مهيدي، حي باب الواد، الجزائر العاصمة، الجزائر',
-        'paymentMethod': 'cash',
-      },
-      {
-        'customer': 'فاطمة أحمد',
-        'customerPhone': '0555987654',
-        'customerAddress': 'وهران، حي الصفا',
-        'items': [
-          {
-            'name': 'شبكة ري للحديقة',
-            'quantity': 1,
-            'price': 2500.0,
-          },
-        ],
-        'totalAmount': 2500.0,
-        'status': 'قيد التنفيذ',
-        'createdAt': FieldValue.serverTimestamp(),
-        'notes': '',
-        'needsDelivery': false,
-        'paymentMethod': 'electronic',
-      },
-      {
-        'customer': 'محمد علي',
-        'customerPhone': '0555456789',
-        'customerAddress': 'قسنطينة، حي الشاطئ',
-        'items': [
-          {
-            'name': 'مضخة غاطسة 3HP',
-            'quantity': 1,
-            'price': 2200.0,
-          },
-          {
-            'name': 'أنابيب PVC',
-            'quantity': 10,
-            'price': 50.0,
-          },
-        ],
-        'totalAmount': 2700.0,
-        'status': 'تم التسليم',
-        'createdAt': FieldValue.serverTimestamp(),
-        'notes': 'تم التسليم بنجاح',
-        'needsDelivery': true,
-        'deliveryAddress': 'شارع الأمير عبد القادر، حي الشاطئ، قسنطينة، الجزائر',
-        'paymentMethod': 'cash',
-      },
-    ];
-
-    for (var order in sampleOrders) {
-      await _ordersCollection.add(order);
-    }
+    _animationController.forward();
+    // تم حذف استدعاء _ensureOrdersCollectionExists() لتجنب إنشاء طلبات تجريبية
   }
 
   @override
@@ -152,7 +53,7 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
     super.dispose();
   }
 
-  // عرض تفاصيل الطلب - محسن ومرن مع إضافة الموقع
+  // عرض تفاصيل الطلب - محسن ومرن
   void _showOrderDetails(Map<String, dynamic> order, String orderId) {
     showModalBottomSheet(
       context: context,
@@ -262,23 +163,9 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
                               valueColor: primaryColor,
                               isVerySmallScreen: isVerySmallScreen,
                             ),
-                            _buildDetailItem(
-                              icon: Icons.payment,
-                              title: 'طريقة الدفع',
-                              value: _getPaymentMethodText(order['paymentMethod']),
-                              isVerySmallScreen: isVerySmallScreen,
-                            ),
                           ], isVerySmallScreen),
                           
                           SizedBox(height: isVerySmallScreen ? 16 : 20),
-
-                          // قسم التوصيل (يظهر فقط إذا كان التوصيل مطلوب)
-                          if (order['needsDelivery'] == true) ...[
-                            _buildSectionHeader('معلومات التوصيل', isVerySmallScreen),
-                            SizedBox(height: isVerySmallScreen ? 8 : 12),
-                            _buildDeliveryCard(order, isVerySmallScreen),
-                            SizedBox(height: isVerySmallScreen ? 16 : 20),
-                          ],
                           
                           // المنتجات المطلوبة
                           _buildSectionHeader('المنتجات المطلوبة', isVerySmallScreen),
@@ -441,178 +328,6 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
         },
       ),
     );
-  }
-
-  // بناء بطاقة التوصيل الجديدة
-  Widget _buildDeliveryCard(Map<String, dynamic> order, bool isVerySmallScreen) {
-    final deliveryAddress = order['deliveryAddress'] ?? 'غير محدد';
-    
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: deliveryColor.withOpacity(0.3)),
-        boxShadow: [
-          BoxShadow(
-            color: deliveryColor.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.delivery_dining,
-                color: deliveryColor,
-                size: isVerySmallScreen ? 20 : 24,
-              ),
-              SizedBox(width: isVerySmallScreen ? 8 : 12),
-              Text(
-                'عنوان التوصيل',
-                style: TextStyle(
-                  fontSize: isVerySmallScreen ? 14 : 16,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Cairo',
-                  color: deliveryColor,
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: isVerySmallScreen ? 8 : 12),
-          Container(
-            width: double.infinity,
-            padding: EdgeInsets.all(isVerySmallScreen ? 8 : 12),
-            decoration: BoxDecoration(
-              color: deliveryColor.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: deliveryColor.withOpacity(0.2)),
-            ),
-            child: Text(
-              deliveryAddress,
-              style: TextStyle(
-                fontFamily: 'Cairo',
-                fontSize: isVerySmallScreen ? 13 : 15,
-                height: 1.4,
-              ),
-            ),
-          ),
-          SizedBox(height: isVerySmallScreen ? 12 : 16),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _copyToClipboard(deliveryAddress),
-                  icon: Icon(
-                    Icons.copy,
-                    size: isVerySmallScreen ? 16 : 18,
-                  ),
-                  label: Text(
-                    'نسخ العنوان',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: isVerySmallScreen ? 12 : 14,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: isVerySmallScreen ? 8 : 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-              SizedBox(width: isVerySmallScreen ? 8 : 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _openInMaps(deliveryAddress),
-                  icon: Icon(
-                    Icons.map,
-                    size: isVerySmallScreen ? 16 : 18,
-                  ),
-                  label: Text(
-                    'فتح الخريطة',
-                    style: TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: isVerySmallScreen ? 12 : 14,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      vertical: isVerySmallScreen ? 8 : 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // نسخ العنوان إلى الحافظة
-  void _copyToClipboard(String address) {
-    Clipboard.setData(ClipboardData(text: address));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('تم نسخ العنوان إلى الحافظة!'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  // فتح العنوان في خرائط جوجل
-  Future<void> _openInMaps(String address) async {
-    final encodedAddress = Uri.encodeComponent(address);
-    final Uri mapsUri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$encodedAddress');
-    
-    try {
-      if (await canLaunchUrl(mapsUri)) {
-        await launchUrl(mapsUri, mode: LaunchMode.externalApplication);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('لا يمكن فتح خرائط جوجل'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('خطأ في فتح الخريطة: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  // الحصول على نص طريقة الدفع
-  String _getPaymentMethodText(String? paymentMethod) {
-    switch (paymentMethod) {
-      case 'cash':
-        return 'دفع عند الاستلام';
-      case 'electronic':
-        return 'دفع إلكتروني';
-      default:
-        return 'غير محدد';
-    }
   }
 
   // بناء رأس القسم
@@ -821,6 +536,24 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    // التحقق من وجود معرف البائع
+    if (_currentSellerId == null) {
+      return Scaffold(
+        backgroundColor: backgroundColor,
+        body: const Center(
+          child: Text(
+            'خطأ: لم يتم العثور على معرف البائع\nيرجى تسجيل الدخول مرة أخرى',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.red,
+              fontFamily: 'Cairo',
+            ),
+          ),
+        ),
+      );
+    }
+    
     return LayoutBuilder(
       builder: (context, constraints) {
         final screenWidth = constraints.maxWidth;
@@ -830,170 +563,165 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
         
         return Scaffold(
           backgroundColor: backgroundColor,
-          body: _isLoading
-              ? Center(
-                  child: CircularProgressIndicator(color: primaryColor),
-                )
-              : FadeTransition(
-                  opacity: _fadeAnimation,
-                  child: Column(
+          body: FadeTransition(
+            opacity: _fadeAnimation,
+            child: Column(
+              children: [
+                // شريط الفلترة
+                Container(
+                  padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
+                  child: Row(
                     children: [
-                      // شريط الفلترة
-                      Container(
-                        padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
-                        child: Row(
-                          children: [
-                            Text(
-                              'فلترة الطلبات:',
-                              style: TextStyle(
-                                fontFamily: 'Cairo',
-                                fontWeight: FontWeight.bold,
-                                fontSize: isVerySmallScreen ? 14 : 16,
-                              ),
-                            ),
-                            SizedBox(width: isVerySmallScreen ? 8 : 12),
-                            Expanded(
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: Colors.grey.shade300),
-                                ),
-                                child: DropdownButton<String>(
-                                  value: _selectedFilter,
-                                  isExpanded: true,
-                                  underline: const SizedBox(),
-                                  items: ['الكل', 'جديد', 'قيد التنفيذ', 'تم التسليم']
-                                      .map((String value) {
-                                    return DropdownMenuItem<String>(
-                                      value: value,
-                                      child: Text(
-                                        value,
-                                        style: TextStyle(
-                                          fontFamily: 'Cairo',
-                                          fontSize: isVerySmallScreen ? 12 : 14,
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                                  onChanged: (String? newValue) {
-                                    setState(() {
-                                      _selectedFilter = newValue!;
-                                    });
-                                  },
-                                ),
-                              ),
-                            ),
-                          ],
+                      Text(
+                        'فلترة الطلبات:',
+                        style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontWeight: FontWeight.bold,
+                          fontSize: isVerySmallScreen ? 14 : 16,
                         ),
                       ),
-                      
-                      // قائمة الطلبات
+                      SizedBox(width: isVerySmallScreen ? 8 : 12),
                       Expanded(
-                        child: StreamBuilder<QuerySnapshot>(
-                          stream: _getFilteredOrdersStream(),
-                          builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return Center(
-                                child: CircularProgressIndicator(color: primaryColor),
-                              );
-                            }
-
-                            if (snapshot.hasError) {
-                              return Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline,
-                                      size: isVerySmallScreen ? 50 : 60,
-                                      color: Colors.red[300],
-                                    ),
-                                    SizedBox(height: isVerySmallScreen ? 12 : 16),
-                                    Text(
-                                      'حدث خطأ: ${snapshot.error}',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: isVerySmallScreen ? 14 : 16,
-                                        color: Colors.red,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: DropdownButton<String>(
+                            value: _selectedFilter,
+                            isExpanded: true,
+                            underline: const SizedBox(),
+                            items: ['الكل', 'جديد', 'قيد التنفيذ', 'تم التسليم']
+                                .map((String value) {
+                              return DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(
+                                  value,
+                                  style: TextStyle(
+                                    fontFamily: 'Cairo',
+                                    fontSize: isVerySmallScreen ? 12 : 14,
+                                  ),
                                 ),
                               );
-                            }
-
-                            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                              return Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.receipt_long_outlined,
-                                      size: isVerySmallScreen ? 60 : 80,
-                                      color: Colors.grey[400],
-                                    ),
-                                    SizedBox(height: isVerySmallScreen ? 12 : 16),
-                                    Text(
-                                      'لا توجد طلبات حالياً',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: isVerySmallScreen ? 16 : 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                    SizedBox(height: isVerySmallScreen ? 6 : 8),
-                                    Text(
-                                      'ستظهر الطلبات الجديدة هنا',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: isVerySmallScreen ? 12 : 14,
-                                        color: Colors.grey,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }
-
-                            final orders = snapshot.data!.docs;
-                            
-                            return RefreshIndicator(
-                              onRefresh: () async {
-                                setState(() {});
-                              },
-                              color: primaryColor,
-                              child: ListView.separated(
-                                padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
-                                itemCount: orders.length,
-                                separatorBuilder: (_, __) => SizedBox(height: isVerySmallScreen ? 8 : 12),
-                                itemBuilder: (context, index) {
-                                  final order = orders[index].data() as Map<String, dynamic>;
-                                  final orderId = orders[index].id;
-                                  
-                                  return _buildOrderCard(order, orderId, isVerySmallScreen);
-                                },
-                              ),
-                            );
-                          },
+                            }).toList(),
+                            onChanged: (String? newValue) {
+                              setState(() {
+                                _selectedFilter = newValue!;
+                              });
+                            },
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
+                
+                // قائمة الطلبات
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _getFilteredOrdersStream(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return Center(
+                          child: CircularProgressIndicator(color: primaryColor),
+                        );
+                      }
+
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.error_outline,
+                                size: isVerySmallScreen ? 50 : 60,
+                                color: Colors.red[300],
+                              ),
+                              SizedBox(height: isVerySmallScreen ? 12 : 16),
+                              Text(
+                                'حدث خطأ: ${snapshot.error}',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: isVerySmallScreen ? 14 : 16,
+                                  color: Colors.red,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // هنا ستظهر رسالة "لا توجد طلبات" إذا لم توجد طلبات حقيقية
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.receipt_long_outlined,
+                                size: isVerySmallScreen ? 60 : 80,
+                                color: Colors.grey[400],
+                              ),
+                              SizedBox(height: isVerySmallScreen ? 12 : 16),
+                              Text(
+                                'لا توجد طلبات حالياً',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: isVerySmallScreen ? 16 : 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              SizedBox(height: isVerySmallScreen ? 6 : 8),
+                              Text(
+                                'ستظهر الطلبات الجديدة هنا',
+                                style: TextStyle(
+                                  fontFamily: 'Cairo',
+                                  fontSize: isVerySmallScreen ? 12 : 14,
+                                  color: Colors.grey,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      final orders = snapshot.data!.docs;
+                      
+                      return RefreshIndicator(
+                        onRefresh: () async {
+                          setState(() {});
+                        },
+                        color: primaryColor,
+                        child: ListView.separated(
+                          padding: EdgeInsets.all(isVerySmallScreen ? 12 : 16),
+                          itemCount: orders.length,
+                          separatorBuilder: (_, __) => SizedBox(height: isVerySmallScreen ? 8 : 12),
+                          itemBuilder: (context, index) {
+                            final order = orders[index].data() as Map<String, dynamic>;
+                            final orderId = orders[index].id;
+                            
+                            return _buildOrderCard(order, orderId, isVerySmallScreen);
+                          },
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
   }
 
-  // بناء بطاقة الطلب - محسنة ومرنة مع إضافة مؤشر التوصيل
+  // بناء بطاقة الطلب - محسنة ومرنة
   Widget _buildOrderCard(Map<String, dynamic> order, String orderId, bool isVerySmallScreen) {
-    final bool needsDelivery = order['needsDelivery'] ?? false;
-    
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(
@@ -1024,49 +752,13 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                order['customer'] ?? 'غير معروف',
-                                style: TextStyle(
-                                  fontFamily: 'Cairo',
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: isVerySmallScreen ? 14 : 16,
-                                ),
-                              ),
-                            ),
-                            // مؤشر التوصيل
-                            if (needsDelivery)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: deliveryColor.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: deliveryColor.withOpacity(0.3)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.delivery_dining,
-                                      color: deliveryColor,
-                                      size: isVerySmallScreen ? 12 : 14,
-                                    ),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      'توصيل',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: isVerySmallScreen ? 8 : 10,
-                                        color: deliveryColor,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
+                        Text(
+                          order['customer'] ?? 'غير معروف',
+                          style: TextStyle(
+                            fontFamily: 'Cairo',
+                            fontWeight: FontWeight.bold,
+                            fontSize: isVerySmallScreen ? 14 : 16,
+                          ),
                         ),
                         SizedBox(height: isVerySmallScreen ? 2 : 4),
                         Text(
@@ -1122,9 +814,15 @@ class _SellerOrdersTabState extends State<SellerOrdersTab> with SingleTickerProv
     );
   }
 
-  // الحصول على ستريم الطلبات المفلترة
+  // الحصول على ستريم الطلبات المفلترة مع إضافة فلترة sellerId
   Stream<QuerySnapshot> _getFilteredOrdersStream() {
-    Query query = _ordersCollection.orderBy('createdAt', descending: true);
+    if (_currentSellerId == null) {
+      return const Stream.empty();
+    }
+    
+    Query query = _ordersCollection
+        .where('sellerId', isEqualTo: _currentSellerId!) // إضافة الفلترة الأساسية
+        .orderBy('createdAt', descending: true);
     
     if (_selectedFilter != 'الكل') {
       query = query.where('status', isEqualTo: _selectedFilter);
