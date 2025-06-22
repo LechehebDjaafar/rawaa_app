@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -134,7 +135,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     
     _initializeCategories();
     _animationController.forward();
-    // تم حذف استدعاء _ensureProductsCollectionExists() لتجنب إنشاء منتجات تجريبية
   }
 
   // تهيئة قائمة الفئات المسطحة
@@ -189,7 +189,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     }
   }
 
-  // تحويل الصورة إلى Base64 مع ضغط
+  // تحويل الصورة إلى Base64 مع ضغط محسن
   Future<void> _convertImageToBase64() async {
     if (_imageFile == null) return;
     
@@ -208,21 +208,25 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
         return;
       }
 
-      // تغيير حجم الصورة إذا كانت كبيرة
-      if (image.width > 400 || image.height > 400) {
+      // تغيير حجم الصورة إذا كانت كبيرة - تحسين أفضل
+      if (image.width > 600 || image.height > 600) {
         image = img.copyResize(
           image,
-          width: image.width > image.height ? 400 : null,
-          height: image.height > image.width ? 400 : null,
+          width: image.width > image.height ? 600 : null,
+          height: image.height > image.width ? 600 : null,
         );
       }
 
-      // ضغط الصورة وتحويلها إلى JPEG
-      List<int> compressedBytes = img.encodeJpg(image, quality: 60);
+      // ضغط الصورة وتحويلها إلى JPEG بجودة محسنة
+      List<int> compressedBytes = img.encodeJpg(image, quality: 75);
 
-      // التحقق من الحجم النهائي
-      if (compressedBytes.length > 1024 * 1024) {
-        compressedBytes = img.encodeJpg(image, quality: 40);
+      // التحقق من الحجم النهائي وضغط أكثر إذا لزم الأمر
+      if (compressedBytes.length > 800 * 1024) { // 800KB
+        compressedBytes = img.encodeJpg(image, quality: 60);
+      }
+      
+      if (compressedBytes.length > 1024 * 1024) { // 1MB
+        compressedBytes = img.encodeJpg(image, quality: 45);
       }
 
       // تحويل إلى Base64
@@ -242,8 +246,84 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     }
   }
 
-  // إضافة أو تعديل منتج مع Base64 وإضافة sellerId
+  // التحقق من الاشتراك
+  Future<bool> _checkUserSubscription() async {
+    try {
+      final querySnapshot = await FirebaseFirestore.instance
+          .collection('subscriptions')
+          .where('userId', isEqualTo: _currentSellerId)
+          .where('status', isEqualTo: 'active')
+          .where('endDate', isGreaterThan: Timestamp.now())
+          .get();
+
+      return querySnapshot.docs.isNotEmpty;
+    } catch (e) {
+      print('خطأ في التحقق من الاشتراك: $e');
+      return false;
+    }
+  }
+
+  // عرض نافذة الاشتراك
+  void _showSubscriptionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          'اشتراك مطلوب',
+          style: TextStyle(fontFamily: 'Cairo'),
+        ),
+        content: const Text(
+          'يجب أن تكون مشتركاً لإضافة منتجات جديدة. هل تريد الاشتراك الآن؟',
+          style: TextStyle(fontFamily: 'Cairo'),
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'إلغاء',
+              style: TextStyle(fontFamily: 'Cairo'),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showSubscriptionPage();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primaryColor,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text(
+              'اشترك الآن',
+              style: TextStyle(fontFamily: 'Cairo'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // عرض صفحة الاشتراك
+  void _showSubscriptionPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SubscriptionPage(),
+      ),
+    );
+  }
+
+  // إضافة أو تعديل منتج مع Base64 وفحص الاشتراك
   Future<void> _saveProduct() async {
+    // التحقق من الاشتراك أولاً
+    final hasValidSubscription = await _checkUserSubscription();
+    
+    if (!hasValidSubscription) {
+      _showSubscriptionDialog();
+      return;
+    }
+
     final String name = _nameController.text.trim();
     final String description = _descriptionController.text.trim();
     final double? price = double.tryParse(_priceController.text.trim());
@@ -254,7 +334,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       return;
     }
 
-    // التحقق من وجود معرف البائع
     if (_currentSellerId == null) {
       _showErrorSnackBar('خطأ: لم يتم العثور على معرف البائع');
       return;
@@ -279,7 +358,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
           'searchKeywords': _generateSearchKeywords(name, _selectedCategory!),
         };
 
-        // إضافة الصورة المحولة إلى Base64 إذا تم اختيار صورة جديدة
         if (_base64Image != null) {
           updates['imageBase64'] = _base64Image;
           updates['hasImage'] = true;
@@ -288,19 +366,18 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
         await _productsCollection.doc(productId).update(updates);
         _showSuccessSnackBar('تم تعديل المنتج بنجاح');
       } else {
-        // إنشاء منتج جديد مع إضافة sellerId
+        // إنشاء منتج جديد
         final Map<String, dynamic> productData = {
           'name': name,
           'description': description,
           'price': price,
           'category': _selectedCategory,
           'stock': stock,
-          'sellerId': _currentSellerId!, // إضافة معرف البائع الحالي
+          'sellerId': _currentSellerId,
           'createdAt': FieldValue.serverTimestamp(),
           'searchKeywords': _generateSearchKeywords(name, _selectedCategory!),
         };
 
-        // إضافة الصورة المحولة إلى Base64 إذا كانت موجودة
         if (_base64Image != null) {
           productData['imageBase64'] = _base64Image;
           productData['hasImage'] = true;
@@ -327,14 +404,10 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
   List<String> _generateSearchKeywords(String name, String category) {
     List<String> keywords = [];
     
-    // إضافة كلمات من اسم المنتج
     keywords.addAll(name.toLowerCase().split(' '));
-    
-    // إضافة كلمات من الفئة
     keywords.addAll(category.toLowerCase().split(' '));
     keywords.addAll(category.toLowerCase().split(' - '));
     
-    // إزالة الكلمات المكررة والفارغة
     keywords = keywords.where((keyword) => keyword.isNotEmpty).toSet().toList();
     
     return keywords;
@@ -403,7 +476,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     );
   }
 
-  // عرض نافذة إضافة/تعديل منتج - مرنة
+  // عرض نافذة إضافة/تعديل منتج
   void _showAddProductSheet() {
     showModalBottomSheet(
       context: context,
@@ -466,7 +539,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     );
   }
 
-  // نموذج إضافة/تعديل منتج - مرن مع قائمة الفئات المحددة
+  // نموذج إضافة/تعديل منتج
   Widget _buildProductForm(bool isVerySmallScreen) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,7 +743,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     }
   }
 
-  // حقل إدخال موحد - مرن
+  // حقل إدخال موحد
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -719,7 +792,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    // التحقق من وجود معرف البائع
     if (_currentSellerId == null) {
       return Scaffold(
         backgroundColor: backgroundColor,
@@ -810,7 +882,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
 
   Widget _buildProductsList(bool isSmallScreen, bool isVerySmallScreen) {
     return StreamBuilder<QuerySnapshot>(
-      // إضافة الفلترة الصحيحة هنا - عرض منتجات البائع الحالي فقط
       stream: _productsCollection
           .where('sellerId', isEqualTo: _currentSellerId!)
           .orderBy('createdAt', descending: true)
@@ -847,27 +918,33 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
           );
         }
 
-        // هنا ستظهر رسالة "لا يوجد منتجات" إذا لم توجد منتجات حقيقية
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return _buildEmptyProductsView(isVerySmallScreen);
         }
 
         final products = snapshot.data!.docs;
 
-        // تحديد عدد الأعمدة ونسب العرض إلى الارتفاع حسب حجم الشاشة
+        // تحسين تخطيط الشبكة
         int crossAxisCount;
         double childAspectRatio;
         double horizontalPadding;
         double verticalSpacing;
         
         if (isSmallScreen) {
-          crossAxisCount = 2;
-          childAspectRatio = isVerySmallScreen ? 0.55 : 0.6;
-          horizontalPadding = 12;
-          verticalSpacing = 12;
+          if (isVerySmallScreen) {
+            crossAxisCount = 2;
+            childAspectRatio = 0.68; // تحسين النسبة لحل مشكلة الشرائط
+            horizontalPadding = 8;
+            verticalSpacing = 8;
+          } else {
+            crossAxisCount = 2;
+            childAspectRatio = 0.72;
+            horizontalPadding = 12;
+            verticalSpacing = 12;
+          }
         } else {
           crossAxisCount = 3;
-          childAspectRatio = 0.7;
+          childAspectRatio = 0.78;
           horizontalPadding = 16;
           verticalSpacing = 16;
         }
@@ -900,7 +977,7 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     );
   }
 
-  // دالة لعرض حالة عدم وجود منتجات - مرنة
+  // دالة لعرض حالة عدم وجود منتجات
   Widget _buildEmptyProductsView(bool isVerySmallScreen) {
     return Center(
       child: Padding(
@@ -968,7 +1045,6 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
     );
   }
 
-  // دالة لبناء بطاقة المنتج - مرنة مع دعم Base64
   Widget _buildProductCard(Map<String, dynamic> product, String productId, bool isVerySmallScreen) {
     return Card(
       elevation: 2,
@@ -976,180 +1052,170 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final totalHeight = constraints.maxHeight;
-          final imageHeight = totalHeight * 0.4; // 40% للصورة
-          final contentHeight = totalHeight * 0.6; // 60% للمحتوى
-          
-          return SizedBox(
-            height: totalHeight,
-            child: Column(
-              children: [
-                // صورة المنتج مع دعم Base64
-                SizedBox(
-                  height: imageHeight,
-                  width: double.infinity,
-                  child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                    child: Stack(
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          height: double.infinity,
-                          color: Colors.grey[200],
-                          child: _getProductImage(product),
-                        ),
-                        // أزرار التعديل والحذف
-                        Positioned(
-                          top: 4,
-                          right: 4,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.8),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.edit,
-                                size: isVerySmallScreen ? 14 : 16,
-                              ),
-                              onPressed: () => _editProduct(product, productId),
-                              color: primaryColor,
-                              padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(
-                                minWidth: isVerySmallScreen ? 24 : 30,
-                                minHeight: isVerySmallScreen ? 24 : 30,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          top: 4,
-                          left: 4,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.8),
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.delete,
-                                size: isVerySmallScreen ? 14 : 16,
-                              ),
-                              onPressed: () => _deleteProduct(productId),
-                              color: Colors.red,
-                              padding: EdgeInsets.zero,
-                              constraints: BoxConstraints(
-                                minWidth: isVerySmallScreen ? 24 : 30,
-                                minHeight: isVerySmallScreen ? 24 : 30,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+      child: IntrinsicHeight( // إضافة IntrinsicHeight لحل مشكلة الشرائط
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // صورة المنتج
+            AspectRatio(
+              aspectRatio: 1.2, // نسبة ثابتة للصورة
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                child: Stack(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      height: double.infinity,
+                      color: Colors.grey[200],
+                      child: _getProductImage(product),
                     ),
-                  ),
+                    // أزرار التعديل والحذف
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        width: isVerySmallScreen ? 28 : 32,
+                        height: isVerySmallScreen ? 28 : 32,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.edit,
+                            size: isVerySmallScreen ? 12 : 14,
+                          ),
+                          onPressed: () => _editProduct(product, productId),
+                          color: primaryColor,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 6,
+                      left: 6,
+                      child: Container(
+                        width: isVerySmallScreen ? 28 : 32,
+                        height: isVerySmallScreen ? 28 : 32,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: Icon(
+                            Icons.delete,
+                            size: isVerySmallScreen ? 12 : 14,
+                          ),
+                          onPressed: () => _deleteProduct(productId),
+                          color: Colors.red,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+            ),
 
-                // معلومات المنتج
-                SizedBox(
-                  height: contentHeight,
-                  child: Padding(
-                    padding: EdgeInsets.all(isVerySmallScreen ? 8 : 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+            // معلومات المنتج
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.all(isVerySmallScreen ? 8 : 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // اسم المنتج
+                    Text(
+                      product['name'] ?? '',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontWeight: FontWeight.bold,
+                        fontSize: isVerySmallScreen ? 11 : 13,
+                        height: 1.2,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    
+                    SizedBox(height: isVerySmallScreen ? 4 : 6),
+                    
+                    // الفئة
+                    Text(
+                      product['category'] ?? '',
+                      style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: isVerySmallScreen ? 9 : 10,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    
+                    const Spacer(),
+                    
+                    // السعر والمخزون
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        // اسم المنتج
-                        SizedBox(
-                          height: isVerySmallScreen ? 24 : 28,
+                        Flexible(
                           child: Text(
-                            product['name'] ?? '',
+                            '${product['price']?.toString() ?? '0'} د.ج',
                             style: TextStyle(
                               fontFamily: 'Cairo',
                               fontWeight: FontWeight.bold,
                               fontSize: isVerySmallScreen ? 11 : 13,
+                              color: primaryColor,
                             ),
-                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        
-                        SizedBox(height: isVerySmallScreen ? 2 : 4),
-                        
-                        // الفئة
-                        SizedBox(
-                          height: isVerySmallScreen ? 14 : 16,
+                        Container(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: isVerySmallScreen ? 4 : 6,
+                            vertical: isVerySmallScreen ? 2 : 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: backgroundColor,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                           child: Text(
-                            product['category'] ?? '',
+                            'المخزون: ${product['stock']?.toString() ?? '0'}',
                             style: TextStyle(
                               fontFamily: 'Cairo',
-                              fontSize: isVerySmallScreen ? 9 : 11,
-                              color: Colors.grey[600],
+                              fontSize: isVerySmallScreen ? 8 : 9,
+                              color: Colors.grey[700],
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        
-                        // مساحة مرنة
-                        const Spacer(),
-                        
-                        // السعر والمخزون
-                        SizedBox(
-                          height: isVerySmallScreen ? 32 : 36,
-                          child: Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    '${product['price']?.toString() ?? '0'} د.ج',
-                                    style: TextStyle(
-                                      fontFamily: 'Cairo',
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: isVerySmallScreen ? 11 : 13,
-                                      color: primaryColor,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: EdgeInsets.symmetric(
-                                      horizontal: isVerySmallScreen ? 4 : 6,
-                                      vertical: isVerySmallScreen ? 2 : 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: backgroundColor,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      'المخزون: ${product['stock']?.toString() ?? '0'}',
-                                      style: TextStyle(
-                                        fontFamily: 'Cairo',
-                                        fontSize: isVerySmallScreen ? 8 : 9,
-                                        color: Colors.grey[700],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
                           ),
                         ),
                       ],
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
 
   // الحصول على صورة المنتج من Base64
   Widget _getProductImage(Map<String, dynamic> product) {
-    if (product['imageBase64'] != null) {
+    if (product['imageBase64'] != null && product['imageBase64'].toString().isNotEmpty) {
       try {
         Uint8List bytes = base64Decode(product['imageBase64']);
         return Image.memory(
@@ -1200,5 +1266,538 @@ class _SellerProductsTabState extends State<SellerProductsTab> with SingleTicker
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
+  }
+}
+
+// صفحة الاشتراك
+class SubscriptionPage extends StatefulWidget {
+  const SubscriptionPage({super.key});
+
+  @override
+  State<SubscriptionPage> createState() => _SubscriptionPageState();
+}
+
+class _SubscriptionPageState extends State<SubscriptionPage> {
+  final String? _currentUserId = FirebaseAuth.instance.currentUser?.uid;
+  String? _selectedPlan;
+  String? _selectedPaymentMethod;
+  
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  
+  File? _receiptFile;
+  bool _isUploading = false;
+
+  // خطط الاشتراك
+  final List<Map<String, dynamic>> _subscriptionPlans = [
+    {
+      'id': 'monthly_basic',
+      'name': 'الخطة الأساسية - شهرية',
+      'duration': 'monthly',
+      'price': 1000,
+      'features': ['إضافة 50 منتج', 'دعم فني أساسي', 'تحليلات بسيطة']
+    },
+    {
+      'id': 'monthly_premium',
+      'name': 'الخطة المميزة - شهرية',
+      'duration': 'monthly',
+      'price': 2000,
+      'features': ['إضافة 200 منتج', 'دعم فني متقدم', 'تحليلات متقدمة', 'أولوية في العرض']
+    },
+    {
+      'id': '6months_basic',
+      'name': 'الخطة الأساسية - 6 أشهر',
+      'duration': '6months',
+      'price': 5000,
+      'features': ['إضافة 50 منتج', 'دعم فني أساسي', 'تحليلات بسيطة', 'خصم 15%']
+    },
+    {
+      'id': '6months_premium',
+      'name': 'الخطة المميزة - 6 أشهر',
+      'duration': '6months',
+      'price': 10000,
+      'features': ['إضافة 200 منتج', 'دعم فني متقدم', 'تحليلات متقدمة', 'أولوية في العرض', 'خصم 15%']
+    },
+    {
+      'id': 'yearly_basic',
+      'name': 'الخطة الأساسية - سنوية',
+      'duration': 'yearly',
+      'price': 8000,
+      'features': ['إضافة 50 منتج', 'دعم فني أساسي', 'تحليلات بسيطة', 'خصم 30%']
+    },
+    {
+      'id': 'yearly_premium',
+      'name': 'الخطة المميزة - سنوية',
+      'duration': 'yearly',
+      'price': 15000,
+      'features': ['إضافة 200 منتج', 'دعم فني متقدم', 'تحليلات متقدمة', 'أولوية في العرض', 'خصم 30%']
+    },
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('خطط الاشتراك', style: TextStyle(fontFamily: 'Cairo')),
+        backgroundColor: const Color(0xFF1976D2),
+        foregroundColor: Colors.white,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildPlansSection(),
+            const SizedBox(height: 24),
+            if (_selectedPlan != null) _buildPaymentMethodSection(),
+            const SizedBox(height: 24),
+            if (_selectedPaymentMethod != null) _buildPaymentDetailsSection(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlansSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'اختر خطة الاشتراك',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Cairo',
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...(_subscriptionPlans.map((plan) => _buildPlanCard(plan)).toList()),
+      ],
+    );
+  }
+
+  Widget _buildPlanCard(Map<String, dynamic> plan) {
+    final isSelected = _selectedPlan == plan['id'];
+    
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedPlan = plan['id'];
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1976D2).withOpacity(0.1) : Colors.white,
+          border: Border.all(
+            color: isSelected ? const Color(0xFF1976D2) : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    plan['name'],
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Cairo',
+                      color: isSelected ? const Color(0xFF1976D2) : Colors.black87,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${plan['price']} د.ج',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo',
+                    color: isSelected ? const Color(0xFF1976D2) : Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...((plan['features'] as List<String>).map((feature) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle,
+                    size: 16,
+                    color: isSelected ? const Color(0xFF1976D2) : Colors.green,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    feature,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Cairo',
+                    ),
+                  ),
+                ],
+              ),
+            )).toList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentMethodSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'اختر طريقة الدفع',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Cairo',
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _buildPaymentMethodCard('baridimob', 'بريدي موب', Icons.phone_android),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildPaymentMethodCard('ccp', 'CCP', Icons.account_balance),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPaymentMethodCard(String method, String title, IconData icon) {
+    final isSelected = _selectedPaymentMethod == method;
+    
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedPaymentMethod = method;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1976D2).withOpacity(0.1) : Colors.white,
+          border: Border.all(
+            color: isSelected ? const Color(0xFF1976D2) : Colors.grey[300]!,
+            width: isSelected ? 2 : 1,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 40,
+              color: isSelected ? const Color(0xFF1976D2) : Colors.grey[600],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Cairo',
+                color: isSelected ? const Color(0xFF1976D2) : Colors.black87,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentDetailsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'تفاصيل الدفع',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'Cairo',
+          ),
+        ),
+        const SizedBox(height: 16),
+        
+        if (_selectedPaymentMethod == 'baridimob') ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue[200]!),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'معلومات الدفع عبر بريدي موب:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo',
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'رقم الهاتف: 0555123456',
+                  style: TextStyle(fontSize: 14, fontFamily: 'Cairo'),
+                ),
+                Text(
+                  'البريد الإلكتروني: payment@rawaa.dz',
+                  style: TextStyle(fontSize: 14, fontFamily: 'Cairo'),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'يرجى إرسال المبلغ ثم رفع إثبات الدفع أدناه',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'Cairo',
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else if (_selectedPaymentMethod == 'ccp') ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.green[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green[200]!),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'معلومات الدفع عبر CCP:',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Cairo',
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'رقم الحساب: 0020000123456789',
+                  style: TextStyle(fontSize: 14, fontFamily: 'Cairo'),
+                ),
+                Text(
+                  'اسم الحساب: RAWAA HYDRAULIC',
+                  style: TextStyle(fontSize: 14, fontFamily: 'Cairo'),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'يرجى تحويل المبلغ ثم رفع إثبات التحويل أدناه',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'Cairo',
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        
+        const SizedBox(height: 16),
+        
+        // حقول الإدخال
+        TextField(
+          controller: _phoneController,
+          decoration: const InputDecoration(
+            labelText: 'رقم الهاتف',
+            labelStyle: TextStyle(fontFamily: 'Cairo'),
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.phone),
+          ),
+          keyboardType: TextInputType.phone,
+        ),
+        
+        const SizedBox(height: 16),
+        
+        TextField(
+          controller: _emailController,
+          decoration: const InputDecoration(
+            labelText: 'البريد الإلكتروني',
+            labelStyle: TextStyle(fontFamily: 'Cairo'),
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.email),
+          ),
+          keyboardType: TextInputType.emailAddress,
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // رفع الوصل
+        GestureDetector(
+          onTap: _pickReceiptFile,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              border: Border.all(color: Colors.grey[300]!),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                Icon(
+                  _receiptFile != null ? Icons.check_circle : Icons.upload_file,
+                  size: 40,
+                  color: _receiptFile != null ? Colors.green : Colors.grey[600],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _receiptFile != null ? 'تم اختيار الملف' : 'اضغط لرفع إثبات الدفع',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Cairo',
+                  ),
+                ),
+                if (_receiptFile != null)
+                  Text(
+                    _receiptFile!.path.split('/').last,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'Cairo',
+                      color: Colors.grey,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        
+        const SizedBox(height: 24),
+        
+        // زر الإرسال
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: _isUploading ? null : _submitSubscription,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1976D2),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: _isUploading
+                ? const CircularProgressIndicator(color: Colors.white)
+                : const Text(
+                    'إرسال طلب الاشتراك',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Cairo',
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickReceiptFile() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+      );
+
+      if (result != null) {
+        setState(() {
+          _receiptFile = File(result.files.single.path!);
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في اختيار الملف: $e')),
+      );
+    }
+  }
+
+  Future<void> _submitSubscription() async {
+    if (_phoneController.text.isEmpty || 
+        _emailController.text.isEmpty || 
+        _receiptFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى ملء جميع الحقول ورفع إثبات الدفع')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // تحويل الملف إلى Base64 بدلاً من رفعه إلى Storage
+      String receiptBase64 = '';
+      if (_receiptFile != null) {
+        final bytes = await _receiptFile!.readAsBytes();
+        receiptBase64 = base64Encode(bytes);
+      }
+
+      // إنشاء طلب الاشتراك مع Base64
+      final subscriptionData = {
+        'userId': _currentUserId,
+        'planId': _selectedPlan,
+        'paymentMethod': _selectedPaymentMethod,
+        'phoneNumber': _phoneController.text,
+        'email': _emailController.text,
+        'receiptBase64': receiptBase64, // حفظ الملف كـ Base64
+        'receiptFileName': _receiptFile!.path.split('/').last,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      };
+
+      await FirebaseFirestore.instance
+          .collection('subscription_requests')
+          .add(subscriptionData);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تم إرسال طلب الاشتراك بنجاح! سيتم مراجعته قريباً'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('خطأ في إرسال الطلب: $e')),
+      );
+    } finally {
+      setState(() {
+        _isUploading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _phoneController.dispose();
+    _emailController.dispose();
+    super.dispose();
   }
 }

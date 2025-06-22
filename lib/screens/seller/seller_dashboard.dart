@@ -6,8 +6,7 @@ import 'seller_home_tab.dart';
 import 'seller_products_tab.dart';
 import 'seller_orders_tab.dart';
 import 'seller_messages_tab.dart';
-import 'seller_profile_tab.dart';
-import 'seller_notifications_screen.dart'; // إضافة شاشة الإشعارات
+import 'seller_profile_tab.dart';// إضافة شاشة الإشعارات
 
 class SellerDashboard extends StatefulWidget {
   const SellerDashboard({super.key});
@@ -121,64 +120,64 @@ class _SellerDashboardState extends State<SellerDashboard> with SingleTickerProv
             ),
             actions: [
               // زر الإشعارات مع عداد الإشعارات غير المقروءة
-              Stack(
-                children: [
-                  IconButton(
-                    icon: Icon(
-                      Icons.notifications_outlined,
-                      size: isVerySmallScreen ? 20 : 24,
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const SellerNotificationsScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  // عداد الإشعارات غير المقروءة
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: StreamBuilder<QuerySnapshot>(
-                      stream: FirebaseFirestore.instance
-                          .collection('seller_notifications')
-                          .where('sellerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
-                          .where('isRead', isEqualTo: false)
-                          .snapshots(),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                          return const SizedBox();
-                        }
+              // Stack(
+              //   children: [
+              //     // IconButton(
+              //     //   icon: Icon(
+              //     //     Icons.notifications_outlined,
+              //     //     size: isVerySmallScreen ? 20 : 24,
+              //     //   ),
+              //     //   onPressed: () {
+              //     //     Navigator.push(
+              //     //       context,
+              //     //       MaterialPageRoute(
+              //     //         builder: (context) => const SellerNotificationsScreen(),
+              //     //       ),
+              //     //     );
+              //     //   },
+              //     // ),
+              //     // عداد الإشعارات غير المقروءة
+              //     Positioned(
+              //       right: 8,
+              //       top: 8,
+              //       child: StreamBuilder<QuerySnapshot>(
+              //         stream: FirebaseFirestore.instance
+              //             .collection('seller_notifications')
+              //             .where('sellerId', isEqualTo: FirebaseAuth.instance.currentUser?.uid ?? '')
+              //             .where('isRead', isEqualTo: false)
+              //             .snapshots(),
+              //         builder: (context, snapshot) {
+              //           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              //             return const SizedBox();
+              //           }
                         
-                        final unreadCount = snapshot.data!.docs.length;
+              //           final unreadCount = snapshot.data!.docs.length;
                         
-                        return Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          constraints: BoxConstraints(
-                            minWidth: isVerySmallScreen ? 14 : 16,
-                            minHeight: isVerySmallScreen ? 14 : 16,
-                          ),
-                          child: Text(
-                            unreadCount > 99 ? '99+' : unreadCount.toString(),
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: isVerySmallScreen ? 8 : 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
+              //           return Container(
+              //             padding: const EdgeInsets.all(2),
+              //             decoration: BoxDecoration(
+              //               color: Colors.red,
+              //               borderRadius: BorderRadius.circular(8),
+              //             ),
+              //             constraints: BoxConstraints(
+              //               minWidth: isVerySmallScreen ? 14 : 16,
+              //               minHeight: isVerySmallScreen ? 14 : 16,
+              //             ),
+              //             child: Text(
+              //               unreadCount > 99 ? '99+' : unreadCount.toString(),
+              //               style: TextStyle(
+              //                 color: Colors.white,
+              //                 fontSize: isVerySmallScreen ? 8 : 10,
+              //                 fontWeight: FontWeight.bold,
+              //               ),
+              //               textAlign: TextAlign.center,
+              //             ),
+              //           );
+              //         },
+              //       ),
+              //     ),
+              //   ],
+              // ),
             ],
           ),
           body: FadeTransition(
